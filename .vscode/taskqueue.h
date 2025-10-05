@@ -5,7 +5,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-/* Task Types*/
+/* -------------------- Task Types -------------------- */
 typedef enum
 {
     TASK_UPLOAD,
@@ -14,7 +14,7 @@ typedef enum
     TASK_LIST
 } task_type_t;
 
-/* Task Definition */
+/* -------------------- Task Definition -------------------- */
 typedef struct Task
 {
     task_type_t type;
@@ -25,7 +25,7 @@ typedef struct Task
     size_t filesize;     // file size for upload/download
 } Task;
 
-/*Queue Struct */
+/* -------------------- Queue Struct -------------------- */
 typedef struct TaskQueue
 {
     Task *tasks;
@@ -39,7 +39,7 @@ typedef struct TaskQueue
     pthread_cond_t not_full;
 } TaskQueue;
 
-/*Function Prototypes */
+/* -------------------- Function Prototypes -------------------- */
 int task_queue_init(TaskQueue *q, int capacity);
 void task_queue_destroy(TaskQueue *q);
 int task_queue_push(TaskQueue *q, Task *t);

@@ -1,5 +1,6 @@
 #ifndef CLIENT_QUEUE_H
 #define CLIENT_QUEUE_H
+
 #include <pthread.h>
 #include <stdbool.h>
 
@@ -32,4 +33,4 @@ int client_queue_pop(ClientQueue *q);
 // Signal shutdown to wake any waiting producers/consumers
 void client_queue_signal_shutdown(ClientQueue *q);
 
-#endif
+#endif /* CLIENT_QUEUE_H */

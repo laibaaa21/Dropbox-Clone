@@ -9,6 +9,8 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <pthread.h>
+#include <sys/stat.h>
+#include <dirent.h>
 
 #include "queue.h"
 #include "taskqueue.h"
@@ -20,7 +22,6 @@
 #define WORKER_THREAD_COUNT 4
 #define TASK_QUEUE_CAPACITY 128
 
-/* ------------ Globals ------------ */
 static volatile sig_atomic_t keep_running = 1;
 static int listen_fd = -1;
 
@@ -30,19 +31,17 @@ static TaskQueue task_queue;
 static pthread_t client_threads[CLIENT_THREAD_COUNT];
 static pthread_t worker_threads[WORKER_THREAD_COUNT];
 
-/* ------------ Signal handler ------------ */
 static void int_handler(int signo)
 {
     (void)signo;
     keep_running = 0;
     if (listen_fd >= 0)
         close(listen_fd);
-
     client_queue_signal_shutdown(&client_queue);
     task_queue_signal_shutdown(&task_queue);
 }
 
-/* ------------ Worker thread ------------ */
+/* Worker thread: handles only LIST, DOWNLOAD, DELETE */
 void *worker_worker(void *arg)
 {
     (void)arg;
@@ -50,20 +49,85 @@ void *worker_worker(void *arg)
 
     while (task_queue_pop(&task_queue, &task) == 0)
     {
-        printf("[Worker %lu] Processing task from fd=%d (payload=%s)\n",
-               (unsigned long)pthread_self(), task.client_fd, task.payload);
+        printf("[Worker %lu] Processing %d task for %s\n",
+               (unsigned long)pthread_self(), task.type, task.filename);
 
-        sleep(1); // simulate work
+        char path[512];
+        mkdir("storage", 0777);
+        mkdir("storage/user1", 0777);
 
-        const char *done = "Task completed by worker.\n";
-        send(task.client_fd, done, strlen(done), 0);
+        switch (task.type)
+        {
+        case TASK_DOWNLOAD:
+        {
+            snprintf(path, sizeof(path), "storage/%s/%s", task.username, task.filename);
+            FILE *fp = fopen(path, "rb");
+            if (!fp)
+            {
+                send(task.client_fd, "DOWNLOAD FAILED\n", 16, 0);
+                close(task.client_fd);
+                break;
+            }
+
+            char buf[1024];
+            size_t nbytes;
+            while ((nbytes = fread(buf, 1, sizeof(buf), fp)) > 0)
+                send(task.client_fd, buf, nbytes, 0);
+
+            fclose(fp);
+            send(task.client_fd, "\nDOWNLOAD OK\n", 13, 0);
+            close(task.client_fd);
+            break;
+        }
+
+        case TASK_DELETE:
+        {
+            snprintf(path, sizeof(path), "storage/%s/%s", task.username, task.filename);
+            if (remove(path) == 0)
+                send(task.client_fd, "DELETE OK\n", 10, 0);
+            else
+                send(task.client_fd, "DELETE FAILED\n", 14, 0);
+            close(task.client_fd);
+            break;
+        }
+
+        case TASK_LIST:
+        {
+            snprintf(path, sizeof(path), "storage/%s", task.username);
+            DIR *dir = opendir(path);
+            if (!dir)
+            {
+                send(task.client_fd, "LIST FAILED\n", 12, 0);
+                close(task.client_fd);
+                break;
+            }
+
+            struct dirent *entry;
+            char line[512];
+            while ((entry = readdir(dir)) != NULL)
+            {
+                if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+                    continue;
+                snprintf(line, sizeof(line), "%s\n", entry->d_name);
+                send(task.client_fd, line, strlen(line), 0);
+            }
+            closedir(dir);
+            send(task.client_fd, "LIST END\n", 9, 0);
+            close(task.client_fd);
+            break;
+        }
+
+        default:
+            close(task.client_fd);
+            break;
+        }
     }
 
     printf("[Worker %lu] Exiting...\n", (unsigned long)pthread_self());
     return NULL;
 }
 
-/* ------------ Client thread ------------ */
+/* Client thread: handles UPLOAD immediately, queues others */
 void *client_worker(void *arg)
 {
     (void)arg;
@@ -72,61 +136,112 @@ void *client_worker(void *arg)
     {
         int cfd = client_queue_pop(&client_queue);
         if (cfd < 0)
-            break; // queue shutdown
+            break;
+        char cmd[512];
 
-        struct sockaddr_storage addr;
-        socklen_t len = sizeof(addr);
-        char host[NI_MAXHOST], serv[NI_MAXSERV];
+        const char *msg =
+            "Welcome to Dropbox Clone Server :))\n"
+            "Commands:\n"
+            "UPLOAD <filename> <size>\n"
+            "DOWNLOAD <filename>\n"
+            "DELETE <filename>\n"
+            "LIST\n";
 
-        if (getpeername(cfd, (struct sockaddr *)&addr, &len) == 0 &&
-            getnameinfo((struct sockaddr *)&addr, len, host, sizeof(host),
-                        serv, sizeof(serv),
-                        NI_NUMERICHOST | NI_NUMERICSERV) == 0)
+        ssize_t peek_bytes = recv(cfd, cmd, sizeof(cmd) - 1, MSG_PEEK);
+        if (peek_bytes > 0)
         {
-            printf("[ClientThread %lu] Handling %s:%s (fd=%d)\n",
-                   (unsigned long)pthread_self(), host, serv, cfd);
+            cmd[peek_bytes] = '\0';
+            if (strncmp(cmd, "DOWNLOAD", 8) != 0)
+                send(cfd, msg, strlen(msg), 0);
         }
-        else
+
+        // reads the actual command
+        ssize_t n = recv(cfd, cmd, sizeof(cmd) - 1, 0);
+        if (n <= 0)
         {
-            printf("[ClientThread %lu] Handling fd=%d\n",
-                   (unsigned long)pthread_self(), cfd);
+            close(cfd);
+            continue;
         }
+        cmd[n] = '\0';
+        printf("[ClientThread] Received: %s\n", cmd);
 
-        const char *msg = "Welcome to Dropbox Clone Server :))\n";
-        send(cfd, msg, strlen(msg), 0);
-
-        // Create and enqueue a dummy task
         Task t;
         memset(&t, 0, sizeof(t));
-        t.type = TASK_TEST;
+        strcpy(t.username, "user1");
         t.client_fd = cfd;
-        snprintf(t.payload, sizeof(t.payload), "Hello from client fd=%d", cfd);
 
-        if (task_queue_push(&task_queue, &t) != 0)
+        /* Handle UPLOAD immediately */
+        if (sscanf(cmd, "UPLOAD %255s %zu", t.filename, &t.filesize) == 2)
         {
-            fprintf(stderr, "[ClientThread] Failed to enqueue task for fd=%d\n", cfd);
+            mkdir("storage", 0777);
+            mkdir("storage/user1", 0777);
+
+            char dest[512];
+            snprintf(dest, sizeof(dest), "storage/user1/%s", t.filename);
+            FILE *fp = fopen(dest, "wb");
+            if (!fp)
+            {
+                send(cfd, "UPLOAD FAILED\n", 14, 0);
+                close(cfd);
+                continue;
+            }
+
+            printf("[ClientThread] Receiving %zu bytes for %s\n", t.filesize, t.filename);
+
+            /*Find leftover bytes (file data that came with command) */
+            char *newline = strchr(cmd, '\n');
+            size_t received = 0;
+            if (newline && *(newline + 1) != '\0')
+            {
+                char *extra = newline + 1;
+                size_t extra_len = strlen(extra);
+                fwrite(extra, 1, extra_len, fp);
+                received += extra_len;
+            }
+
+            /*Continue reading remaining bytes */
+            char buf[1024];
+            ssize_t bytes;
+            while (received < t.filesize && (bytes = recv(cfd, buf, sizeof(buf), 0)) > 0)
+            {
+                fwrite(buf, 1, bytes, fp);
+                received += bytes;
+            }
+
+            fclose(fp);
+
+            printf("[ClientThread] Upload done: %s (%zu bytes)\n", t.filename, received);
+            send(cfd, "UPLOAD OK\n", 10, 0);
             close(cfd);
             continue;
         }
 
-        // Wait for worker's response
-        char buf[256];
-        ssize_t n = recv(cfd, buf, sizeof(buf) - 1, 0);
-        if (n > 0)
+        /* Queue other commands for workers */
+        else if (sscanf(cmd, "DOWNLOAD %255s", t.filename) == 1)
+            t.type = TASK_DOWNLOAD;
+        else if (sscanf(cmd, "DELETE %255s", t.filename) == 1)
+            t.type = TASK_DELETE;
+        else if (strncmp(cmd, "LIST", 4) == 0)
+            t.type = TASK_LIST;
+        else
         {
-            buf[n] = '\0';
-            printf("[ClientThread %lu] Received reply for fd=%d: %s",
-                   (unsigned long)pthread_self(), cfd, buf);
+            send(cfd, "Invalid command\n", 16, 0);
+            close(cfd);
+            continue;
         }
 
-        close(cfd);
+        if (task_queue_push(&task_queue, &t) != 0)
+        {
+            fprintf(stderr, "Task queue full. Closing fd=%d\n", cfd);
+            close(cfd);
+        }
     }
 
     printf("[ClientThread %lu] Exiting...\n", (unsigned long)pthread_self());
     return NULL;
 }
 
-/* ------------ Main ------------ */
+/* Main setup */
 int main(int argc, char *argv[])
 {
     const char *port = DEFAULT_PORT;
@@ -139,15 +254,10 @@ int main(int argc, char *argv[])
     if (queue_capacity <= 0)
         queue_capacity = DEFAULT_QUEUE_CAPACITY;
 
-    if (client_queue_init(&client_queue, queue_capacity) != 0)
+    if (client_queue_init(&client_queue, queue_capacity) != 0 ||
+        task_queue_init(&task_queue, TASK_QUEUE_CAPACITY) != 0)
     {
-        fprintf(stderr, "Failed to initialize client queue\n");
-        return 1;
-    }
-    if (task_queue_init(&task_queue, TASK_QUEUE_CAPACITY) != 0)
-    {
-        fprintf(stderr, "Failed to initialize task queue\n");
-        client_queue_destroy(&client_queue);
+        fprintf(stderr, "Queue initialization failed\n");
         return 1;
     }
 
@@ -161,66 +271,43 @@ int main(int argc, char *argv[])
     if (s != 0)
     {
         fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(s));
-        client_queue_destroy(&client_queue);
-        task_queue_destroy(&task_queue);
         return 1;
     }
 
-    for (rp = res; rp != NULL; rp = rp->ai_next)
+    for (rp = res; rp; rp = rp->ai_next)
     {
         listen_fd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
         if (listen_fd == -1)
             continue;
-
         int yes = 1;
         setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
-
         if (bind(listen_fd, rp->ai_addr, rp->ai_addrlen) == 0)
             break;
-
         close(listen_fd);
-        listen_fd = -1;
     }
 
+    freeaddrinfo(res);
     if (rp == NULL)
     {
-        fprintf(stderr, "Could not bind to port %s\n", port);
-        freeaddrinfo(res);
-        client_queue_destroy(&client_queue);
-        task_queue_destroy(&task_queue);
-        return 1;
-    }
-    freeaddrinfo(res);
-
-    if (listen(listen_fd, LISTEN_BACKLOG) != 0)
-    {
-        perror("listen");
-        close(listen_fd);
-        client_queue_destroy(&client_queue);
-        task_queue_destroy(&task_queue);
+        perror("bind");
         return 1;
     }
 
-    // Install signal handler
+    listen(listen_fd, LISTEN_BACKLOG);
+
     struct sigaction sa;
     sa.sa_handler = int_handler;
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = 0;
     sigaction(SIGINT, &sa, NULL);
-    sigaction(SIGTERM, &sa, NULL);
 
-    printf("Server listening on port %s (clientQ=%d, taskQ=%d)\n",
-           port, queue_capacity, TASK_QUEUE_CAPACITY);
+    printf("Server listening on port %s\n", port);
 
-    // Start worker threads
     for (int i = 0; i < WORKER_THREAD_COUNT; i++)
         pthread_create(&worker_threads[i], NULL, worker_worker, NULL);
-
-    // Start client threads
     for (int i = 0; i < CLIENT_THREAD_COUNT; i++)
         pthread_create(&client_threads[i], NULL, client_worker, NULL);
 
-    // Accept loop
     while (keep_running)
     {
         struct sockaddr_storage cli_addr;
@@ -233,31 +320,15 @@ int main(int argc, char *argv[])
             perror("accept");
             break;
         }
-
-        char host[NI_MAXHOST], serv[NI_MAXSERV];
-        if (getnameinfo((struct sockaddr *)&cli_addr, cli_len,
-                        host, sizeof(host), serv, sizeof(serv),
-                        NI_NUMERICHOST | NI_NUMERICSERV) == 0)
-            printf("Accepted connection from %s:%s -> fd=%d\n", host, serv, cfd);
-        else
-            printf("Accepted connection -> fd=%d\n", cfd);
-
         if (client_queue_push(&client_queue, cfd) != 0)
         {
-            fprintf(stderr, "Client queue full or shutdown. Closing fd=%d\n", cfd);
+            fprintf(stderr, "Client queue full\n");
             close(cfd);
-            break;
         }
     }
 
-    printf("Server shutting down...\n");
-
-    if (listen_fd >= 0)
-        close(listen_fd);
-
     client_queue_signal_shutdown(&client_queue);
     task_queue_signal_shutdown(&task_queue);
-
     for (int i = 0; i < CLIENT_THREAD_COUNT; i++)
         pthread_join(client_threads[i], NULL);
     for (int i = 0; i < WORKER_THREAD_COUNT; i++)
@@ -265,6 +336,5 @@ int main(int argc, char *argv[])
 
     client_queue_destroy(&client_queue);
     task_queue_destroy(&task_queue);
-
     return 0;
 }
