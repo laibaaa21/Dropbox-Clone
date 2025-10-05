@@ -3,19 +3,29 @@
 
 #include <pthread.h>
 #include <stdbool.h>
+#include <stddef.h>
 
+/* Task Types*/
 typedef enum
 {
-    TASK_TEST, // placeholder for now
+    TASK_UPLOAD,
+    TASK_DOWNLOAD,
+    TASK_DELETE,
+    TASK_LIST
 } task_type_t;
 
+/* Task Definition */
 typedef struct Task
 {
     task_type_t type;
-    int client_fd;     // socket of the client who requested it
-    char payload[256]; // small message or filename etc.
+    int client_fd;       // client socket
+    char username[64];   // username (later used for auth)
+    char filename[256];  // file name for upload/download/delete
+    char temp_path[512]; // optional temp path for upload
+    size_t filesize;     // file size for upload/download
 } Task;
 
+/*Queue Struct */
 typedef struct TaskQueue
 {
     Task *tasks;
@@ -29,6 +39,7 @@ typedef struct TaskQueue
     pthread_cond_t not_full;
 } TaskQueue;
 
+/*Function Prototypes */
 int task_queue_init(TaskQueue *q, int capacity);
 void task_queue_destroy(TaskQueue *q);
 int task_queue_push(TaskQueue *q, Task *t);
