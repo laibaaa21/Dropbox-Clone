@@ -8,33 +8,59 @@
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <sys/types.h>
-#include <fcntl.h>
+#include <pthread.h>
 #include "queue.h"
 
 #define DEFAULT_PORT "12345"
 #define DEFAULT_QUEUE_CAPACITY 64
 #define LISTEN_BACKLOG 128
+#define CLIENT_THREAD_COUNT 4
 
 static volatile sig_atomic_t keep_running = 1;
 static ClientQueue client_queue;
 static int listen_fd = -1;
+static pthread_t client_threads[CLIENT_THREAD_COUNT];
 
+/*shutdown on Ctrl+C */
 static void int_handler(int signo)
 {
     (void)signo;
     keep_running = 0;
-    // Close listen fd to break accept()
     if (listen_fd >= 0)
         close(listen_fd);
     client_queue_signal_shutdown(&client_queue);
 }
 
-static int set_socket_nonblocking(int fd)
+/* Client Threadpool Worker*/
+void *client_worker(void *arg)
 {
-    int flags = fcntl(fd, F_GETFL, 0);
-    if (flags == -1)
-        return -1;
-    return fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+    (void)arg;
+    while (1)
+    {
+        int cfd = client_queue_pop(&client_queue);
+        if (cfd < 0)
+        {
+            // Queue shutting down
+            break;
+        }
+
+        // client info
+        struct sockaddr_storage addr;
+        socklen_t len = sizeof(addr);
+        getpeername(cfd, (struct sockaddr *)&addr, &len);
+        char host[NI_MAXHOST], serv[NI_MAXSERV];
+        getnameinfo((struct sockaddr *)&addr, len, host, sizeof(host), serv, sizeof(serv),
+                    NI_NUMERICHOST | NI_NUMERICSERV);
+        printf("[Thread %lu] Handling client %s:%s (fd=%d)\n",
+               pthread_self(), host, serv, cfd);
+
+        const char *msg = "Welcome to Dropbox Clone Server :))\n";
+        send(cfd, msg, strlen(msg), 0);
+
+        close(cfd);
+    }
+    printf("[Thread %lu] Exiting...\n", pthread_self());
+    return NULL;
 }
 
 int main(int argc, char *argv[])
@@ -79,8 +105,7 @@ int main(int argc, char *argv[])
         setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
 
         if (bind(listen_fd, rp->ai_addr, rp->ai_addrlen) == 0)
-            break; // success
-
+            break;
         close(listen_fd);
         listen_fd = -1;
     }
@@ -92,7 +117,6 @@ int main(int argc, char *argv[])
         client_queue_destroy(&client_queue);
         return 1;
     }
-
     freeaddrinfo(res);
 
     if (listen(listen_fd, LISTEN_BACKLOG) != 0)
@@ -103,8 +127,7 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    set_socket_nonblocking(listen_fd); // shutdown via close
-
+    // install signal handler
     struct sigaction sa;
     sa.sa_handler = int_handler;
     sigemptyset(&sa.sa_mask);
@@ -112,8 +135,16 @@ int main(int argc, char *argv[])
     sigaction(SIGINT, &sa, NULL);
     sigaction(SIGTERM, &sa, NULL);
 
-    printf("Server listening on port %s (queue capacity=%d)\n", port, queue_capacity);
+    printf("Server listening on port %s (queue capacity=%d)\n",
+           port, queue_capacity);
 
+    // Create client worker threads
+    for (int i = 0; i < CLIENT_THREAD_COUNT; i++)
+    {
+        pthread_create(&client_threads[i], NULL, client_worker, NULL);
+    }
+
+    // Accept loop
     while (keep_running)
     {
         struct sockaddr_storage cli_addr;
@@ -122,36 +153,24 @@ int main(int argc, char *argv[])
         if (cfd < 0)
         {
             if (errno == EINTR)
-            {
-                // interrupted by signal, check keep_running
                 continue;
-            }
             perror("accept");
             break;
         }
 
         char host[NI_MAXHOST], serv[NI_MAXSERV];
-        if (getnameinfo((struct sockaddr *)&cli_addr, cli_len, host, sizeof(host), serv, sizeof(serv),
+        if (getnameinfo((struct sockaddr *)&cli_addr, cli_len,
+                        host, sizeof(host), serv, sizeof(serv),
                         NI_NUMERICHOST | NI_NUMERICSERV) == 0)
-        {
             printf("Accepted connection from %s:%s -> fd=%d\n", host, serv, cfd);
-        }
         else
-        {
             printf("Accepted connection -> fd=%d\n", cfd);
-        }
 
-        // Push into client queue (blocks if full)
         if (client_queue_push(&client_queue, cfd) != 0)
         {
-            // queue is shutting down or error
-            fprintf(stderr, "Queue shutdown or error while pushing fd=%d, closing socket\n", cfd);
+            fprintf(stderr, "Queue shutdown or error closing fd=%d\n", cfd);
             close(cfd);
             break;
-        }
-        else
-        {
-            printf("Enqueued fd=%d (queue size approx=%d)\n", cfd, client_queue.size);
         }
     }
 
@@ -159,6 +178,13 @@ int main(int argc, char *argv[])
     if (listen_fd >= 0)
         close(listen_fd);
     client_queue_signal_shutdown(&client_queue);
+
+    // Wait for client threads to exit
+    for (int i = 0; i < CLIENT_THREAD_COUNT; i++)
+    {
+        pthread_join(client_threads[i], NULL);
+    }
+
     client_queue_destroy(&client_queue);
     return 0;
 }
