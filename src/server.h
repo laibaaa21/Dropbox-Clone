@@ -5,6 +5,7 @@
 #include <pthread.h>
 #include "queue/client_queue.h"
 #include "queue/task_queue.h"
+#include "session/session_manager.h"
 
 /* -------------------- Configuration Constants -------------------- */
 #define DEFAULT_PORT "10985"
@@ -20,6 +21,7 @@ extern int listen_fd;
 
 extern ClientQueue client_queue;
 extern TaskQueue task_queue;
+extern SessionManager session_manager;  /* Global session manager (Phase 2.1) */
 
 extern pthread_t client_threads[CLIENT_THREAD_COUNT];
 extern pthread_t worker_threads[WORKER_THREAD_COUNT];

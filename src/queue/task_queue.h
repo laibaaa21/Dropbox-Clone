@@ -4,9 +4,7 @@
 #include <pthread.h>
 #include <stdbool.h>
 #include <stddef.h>
-
-/* Forward declaration */
-typedef struct Response Response;
+#include <stdint.h>
 
 /* -------------------- Task Types -------------------- */
 typedef enum
@@ -21,13 +19,12 @@ typedef enum
 typedef struct Task
 {
     task_type_t type;
-    int client_fd;       // client socket (for sending responses)
-    char username[64];   // username (later used for auth)
+    uint64_t session_id; // session ID for result delivery (Phase 2.1)
+    char username[64];   // username (authenticated user)
     char filename[256];  // file name for upload/download/delete
     char temp_path[512]; // optional temp path for upload
     size_t filesize;     // file size for upload/download
-    void *data_buffer;   // buffer for upload data
-    Response *response;  // pointer to response structure (worker fills this)
+    void *data_buffer;   // buffer for upload data (for UPLOAD tasks)
 } Task;
 
 /* -------------------- Queue Struct -------------------- */

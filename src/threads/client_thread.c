@@ -3,6 +3,7 @@
 #include "../queue/client_queue.h"
 #include "../queue/task_queue.h"
 #include "../session/response_queue.h"
+#include "../session/session_manager.h"
 #include "../auth/auth.h"
 #include "../auth/user_metadata.h"
 #include <stdio.h>
@@ -23,9 +24,28 @@ void *client_worker(void *arg)
         if (cfd < 0)
             break;
 
+        /* Create session for this client connection (Phase 2.1) */
+        uint64_t session_id = session_create(&session_manager, cfd);
+        if (session_id == 0)
+        {
+            fprintf(stderr, "[ClientThread] Failed to create session\n");
+            close(cfd);
+            continue;
+        }
+
+        /* Get session pointer */
+        Session *session = session_get(&session_manager, session_id);
+        if (!session)
+        {
+            fprintf(stderr, "[ClientThread] Failed to get session %lu\n", session_id);
+            close(cfd);
+            session_destroy(&session_manager, session_id);
+            continue;
+        }
+
+        printf("[ClientThread] Session %lu created (fd=%d)\n", session_id, cfd);
+
         char cmd[512];
-        char authenticated_user[MAX_USERNAME_LEN] = {0};
-        bool is_authenticated = false;
 
         /* Send welcome message */
         const char *welcome_msg =
@@ -36,12 +56,15 @@ void *client_worker(void *arg)
         send(cfd, welcome_msg, strlen(welcome_msg), 0);
 
         /* Authentication loop */
-        while (!is_authenticated)
+        while (!session->is_authenticated)
         {
             ssize_t n = recv(cfd, cmd, sizeof(cmd) - 1, 0);
             if (n <= 0)
             {
-                close(cfd);
+                /* Client disconnected during auth */
+                printf("[ClientThread] Session %lu: client disconnected during auth\n", session_id);
+                session_mark_inactive(&session_manager, session_id);
+                session_destroy(&session_manager, session_id);
                 goto next_client;
             }
             cmd[n] = '\0';
@@ -51,7 +74,7 @@ void *client_worker(void *arg)
             if (newline)
                 *newline = '\0';
 
-            printf("[ClientThread] Auth command: %s\n", cmd);
+            printf("[ClientThread] Session %lu: Auth command: %s\n", session_id, cmd);
 
             char username[MAX_USERNAME_LEN];
             char password[256];
@@ -63,8 +86,7 @@ void *client_worker(void *arg)
                 if (result == 0)
                 {
                     send(cfd, "SIGNUP OK\n", 10, 0);
-                    strncpy(authenticated_user, username, MAX_USERNAME_LEN - 1);
-                    is_authenticated = true;
+                    session_set_username(session, username);
                 }
                 else if (result == -2)
                 {
@@ -82,8 +104,7 @@ void *client_worker(void *arg)
                 if (result == 0)
                 {
                     send(cfd, "LOGIN OK\n", 9, 0);
-                    strncpy(authenticated_user, username, MAX_USERNAME_LEN - 1);
-                    is_authenticated = true;
+                    session_set_username(session, username);
                 }
                 else if (result == -2)
                 {
@@ -114,64 +135,60 @@ void *client_worker(void *arg)
             "QUIT\n";
         send(cfd, file_menu, strlen(file_menu), 0);
 
+        printf("[ClientThread] Session %lu: User '%s' authenticated\n", session_id, session->username);
+
         /* File operation loop */
         while (1)
         {
             ssize_t n = recv(cfd, cmd, sizeof(cmd) - 1, 0);
             if (n <= 0)
             {
-                close(cfd);
+                /* Client disconnected */
+                printf("[ClientThread] Session %lu: client disconnected\n", session_id);
+                session_mark_inactive(&session_manager, session_id);
+                session_destroy(&session_manager, session_id);
                 goto next_client;
             }
             cmd[n] = '\0';
-            printf("[ClientThread] File command from %s: %s\n", authenticated_user, cmd);
+            printf("[ClientThread] Session %lu: File command: %s\n", session_id, cmd);
 
             /* Handle QUIT */
             if (strncmp(cmd, "QUIT", 4) == 0)
             {
                 send(cfd, "Goodbye!\n", 9, 0);
-                close(cfd);
+                printf("[ClientThread] Session %lu: user quit\n", session_id);
+                session_mark_inactive(&session_manager, session_id);
+                session_destroy(&session_manager, session_id);
                 goto next_client;
             }
 
+            /* Prepare task structure (Phase 2.1: use session_id instead of Response*) */
             Task t;
             memset(&t, 0, sizeof(t));
-            strncpy(t.username, authenticated_user, sizeof(t.username) - 1);
-            t.client_fd = cfd;
+            t.session_id = session_id;
+            strncpy(t.username, session->username, sizeof(t.username) - 1);
             t.data_buffer = NULL;
-
-            /* Create response structure */
-            Response response;
-            if (response_init(&response) != 0)
-            {
-                fprintf(stderr, "[ClientThread] Failed to init response\n");
-                send(cfd, "SERVER ERROR\n", 13, 0);
-                close(cfd);
-                goto next_client;
-            }
-            t.response = &response;
 
             /* Parse command */
             if (sscanf(cmd, "UPLOAD %255s %zu", t.filename, &t.filesize) == 2)
             {
                 /* Check quota before receiving data */
-                UserMetadata *user = user_get(&global_user_db, authenticated_user);
+                UserMetadata *user = user_get(&global_user_db, session->username);
                 if (user && !user_check_quota(user, t.filesize))
                 {
                     send(cfd, "UPLOAD ERROR: Quota exceeded\n", 29, 0);
-                    response_destroy(&response);
                     continue;
                 }
 
                 t.type = TASK_UPLOAD;
-                printf("[ClientThread] Receiving %zu bytes for %s\n", t.filesize, t.filename);
+                printf("[ClientThread] Session %lu: Receiving %zu bytes for %s\n", 
+                       session_id, t.filesize, t.filename);
 
                 /* Allocate buffer */
                 t.data_buffer = malloc(t.filesize);
                 if (!t.data_buffer)
                 {
                     send(cfd, "UPLOAD FAILED: Memory allocation failed\n", 40, 0);
-                    response_destroy(&response);
                     continue;
                 }
 
@@ -200,14 +217,14 @@ void *client_worker(void *arg)
 
                 if (received != t.filesize)
                 {
-                    fprintf(stderr, "[ClientThread] Upload incomplete\n");
+                    fprintf(stderr, "[ClientThread] Session %lu: Upload incomplete\n", session_id);
                     send(cfd, "UPLOAD FAILED: Incomplete data\n", 31, 0);
                     free(t.data_buffer);
-                    response_destroy(&response);
                     continue;
                 }
 
-                printf("[ClientThread] Received all %zu bytes, queueing\n", received);
+                printf("[ClientThread] Session %lu: Received all %zu bytes, queueing\n", 
+                       session_id, received);
             }
             else if (sscanf(cmd, "DOWNLOAD %255s", t.filename) == 1)
             {
@@ -224,37 +241,56 @@ void *client_worker(void *arg)
             else
             {
                 send(cfd, "Invalid command\n", 16, 0);
-                response_destroy(&response);
                 continue;
             }
 
-            /* Queue task to workers */
+            /* Reset response for this task (Phase 2.1: reuse session response) */
+            pthread_mutex_lock(&session->response.mtx);
+            session->response.ready = false;
+            session->response.status = RESPONSE_SUCCESS;
+            memset(session->response.message, 0, sizeof(session->response.message));
+            if (session->response.data)
+            {
+                free(session->response.data);
+                session->response.data = NULL;
+            }
+            session->response.data_size = 0;
+            pthread_mutex_unlock(&session->response.mtx);
+
+            /* Queue task to workers (Phase 2.1: task contains session_id) */
             if (task_queue_push(&task_queue, &t) != 0)
             {
-                fprintf(stderr, "Task queue full\n");
+                fprintf(stderr, "[ClientThread] Session %lu: Task queue full\n", session_id);
                 send(cfd, "SERVER BUSY\n", 12, 0);
                 if (t.data_buffer)
                     free(t.data_buffer);
-                response_destroy(&response);
                 continue;
             }
 
-            /* Wait for worker response */
-            printf("[ClientThread] Waiting for worker...\n");
-            response_wait(&response);
-            printf("[ClientThread] Got response: %s\n", response.message);
+            /* Wait for worker response (Phase 2.1: wait on session response) */
+            printf("[ClientThread] Session %lu: Waiting for worker...\n", session_id);
+            response_wait(&session->response);
+            
+            /* Check if session is still active (worker may have found inactive session) */
+            if (!session->is_active)
+            {
+                printf("[ClientThread] Session %lu: became inactive while waiting\n", session_id);
+                session_destroy(&session_manager, session_id);
+                goto next_client;
+            }
+            
+            printf("[ClientThread] Session %lu: Got response: %s\n", 
+                   session_id, session->response.message);
 
             /* Send response to client */
-            if (response.data && response.data_size > 0)
+            if (session->response.data && session->response.data_size > 0)
             {
-                send(cfd, response.data, response.data_size, 0);
+                send(cfd, session->response.data, session->response.data_size, 0);
             }
-            if (strlen(response.message) > 0)
+            if (strlen(session->response.message) > 0)
             {
-                send(cfd, response.message, strlen(response.message), 0);
+                send(cfd, session->response.message, strlen(session->response.message), 0);
             }
-
-            response_destroy(&response);
         }
 
     next_client:

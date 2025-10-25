@@ -9,10 +9,11 @@ SERVER_SRCS = src/main.c \
               src/threads/worker_thread.c \
               src/queue/client_queue.c \
               src/queue/task_queue.c \
-              src/storage/file_ops.c \
               src/session/response_queue.c \
+              src/session/session_manager.c \
               src/auth/auth.c \
-              src/auth/user_metadata.c
+              src/auth/user_metadata.c \
+              src/sync/file_locks.c
 
 SERVER_OBJS = $(SERVER_SRCS:.c=.o)
 SERVER_TARGET = server

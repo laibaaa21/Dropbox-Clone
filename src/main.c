@@ -4,6 +4,7 @@
 #include "queue/client_queue.h"
 #include "queue/task_queue.h"
 #include "auth/user_metadata.h"
+#include "sync/file_locks.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -19,6 +20,7 @@ int listen_fd = -1;
 
 ClientQueue client_queue;
 TaskQueue task_queue;
+SessionManager session_manager;  /* Global session manager (Phase 2.1) */
 
 pthread_t client_threads[CLIENT_THREAD_COUNT];
 pthread_t worker_threads[WORKER_THREAD_COUNT];
@@ -55,13 +57,37 @@ int main(int argc, char *argv[])
         return 1;
     }
 
+    /* Initialize session manager (Phase 2.1) */
+    if (session_manager_init(&session_manager) != 0)
+    {
+        fprintf(stderr, "Session manager initialization failed\n");
+        client_queue_destroy(&client_queue);
+        task_queue_destroy(&task_queue);
+        return 1;
+    }
+
     /* Initialize user database */
     if (user_database_init(&global_user_db, 256) != 0)
     {
         fprintf(stderr, "User database initialization failed\n");
+        session_manager_destroy(&session_manager);
+        client_queue_destroy(&client_queue);
+        task_queue_destroy(&task_queue);
         return 1;
     }
     printf("User database initialized\n");
+
+    /* Initialize file lock manager (Phase 2.5) */
+    if (file_lock_manager_init(&global_file_lock_manager, MAX_FILE_LOCKS) != 0)
+    {
+        fprintf(stderr, "File lock manager initialization failed\n");
+        user_database_destroy(&global_user_db);
+        session_manager_destroy(&session_manager);
+        client_queue_destroy(&client_queue);
+        task_queue_destroy(&task_queue);
+        return 1;
+    }
+    printf("File lock manager initialized\n");
 
     /* Setup server socket */
     struct addrinfo hints, *res, *rp;
@@ -134,15 +160,28 @@ int main(int argc, char *argv[])
     }
 
     /* Shutdown sequence */
+    printf("\n[Main] Shutting down server...\n");
+    
     client_queue_signal_shutdown(&client_queue);
     task_queue_signal_shutdown(&task_queue);
+    
+    /* Wait for all threads to finish */
+    printf("[Main] Waiting for client threads to finish...\n");
     for (int i = 0; i < CLIENT_THREAD_COUNT; i++)
         pthread_join(client_threads[i], NULL);
+    
+    printf("[Main] Waiting for worker threads to finish...\n");
     for (int i = 0; i < WORKER_THREAD_COUNT; i++)
         pthread_join(worker_threads[i], NULL);
 
+    /* Clean up resources */
+    printf("[Main] Cleaning up resources...\n");
+    file_lock_manager_destroy(&global_file_lock_manager);
+    session_manager_destroy(&session_manager);
     client_queue_destroy(&client_queue);
     task_queue_destroy(&task_queue);
     user_database_destroy(&global_user_db);
+
+    printf("[Main] Server shutdown complete\n");
     return 0;
 }
