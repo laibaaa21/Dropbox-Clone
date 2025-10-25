@@ -1,1 +1,8 @@
 Local_Docs/
+server
+dbc_client
+*.o
+src/**/*.o
+client/*.o
+storage/*
+!storage/.gitkeep

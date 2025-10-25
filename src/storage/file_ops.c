@@ -1,11 +1,11 @@
-#include "storage.h"
+#include "file_ops.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <sys/socket.h>
 #include <dirent.h>
-#include <arpa/inet.h>
 
 #define STORAGE_ROOT "storage"
 
@@ -17,7 +17,7 @@ static void ensure_user_dir(const char *username)
     mkdir(path, 0777);         // create user folder if missing
 }
 
-/*UPLOAD */
+/* UPLOAD handler - currently not used, will be refactored in Sprint 2 */
 int handle_upload(Task *t)
 {
     ensure_user_dir(t->username);
@@ -48,7 +48,7 @@ int handle_upload(Task *t)
     return 0;
 }
 
-/*DOWNLOAD*/
+/* DOWNLOAD handler */
 int handle_download(Task *t)
 {
     char path[512];
@@ -70,7 +70,7 @@ int handle_download(Task *t)
     return 0;
 }
 
-/*DELETE*/
+/* DELETE handler */
 int handle_delete(Task *t)
 {
     char path[512];
@@ -86,7 +86,7 @@ int handle_delete(Task *t)
     return 0;
 }
 
-/*LIST*/
+/* LIST handler */
 int handle_list(Task *t)
 {
     char dirpath[256];

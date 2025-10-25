@@ -5,6 +5,9 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+/* Forward declaration */
+typedef struct Response Response;
+
 /* -------------------- Task Types -------------------- */
 typedef enum
 {
@@ -18,11 +21,13 @@ typedef enum
 typedef struct Task
 {
     task_type_t type;
-    int client_fd;       // client socket
+    int client_fd;       // client socket (for sending responses)
     char username[64];   // username (later used for auth)
     char filename[256];  // file name for upload/download/delete
     char temp_path[512]; // optional temp path for upload
     size_t filesize;     // file size for upload/download
+    void *data_buffer;   // buffer for upload data
+    Response *response;  // pointer to response structure (worker fills this)
 } Task;
 
 /* -------------------- Queue Struct -------------------- */
