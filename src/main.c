@@ -25,15 +25,33 @@ SessionManager session_manager;  /* Global session manager (Phase 2.1) */
 pthread_t client_threads[CLIENT_THREAD_COUNT];
 pthread_t worker_threads[WORKER_THREAD_COUNT];
 
-/* -------------------- Signal Handler -------------------- */
+/* -------------------- Signal Handler (Phase 2.7) -------------------- */
 void int_handler(int signo)
 {
     (void)signo;
+
+    /* Prevent re-entry */
+    static volatile sig_atomic_t handler_called = 0;
+    if (handler_called)
+        return;
+    handler_called = 1;
+
+    printf("\n[Signal] Received SIGINT, initiating graceful shutdown...\n");
+
+    /* Step 1: Stop accepting new connections */
     keep_running = 0;
     if (listen_fd >= 0)
+    {
+        shutdown(listen_fd, SHUT_RDWR);
         close(listen_fd);
+        listen_fd = -1;
+    }
+
+    /* Step 2: Signal queues to stop accepting new items */
     client_queue_signal_shutdown(&client_queue);
     task_queue_signal_shutdown(&task_queue);
+
+    printf("[Signal] Shutdown signal sent to all queues\n");
 }
 
 /* -------------------- Main Function -------------------- */
@@ -124,12 +142,16 @@ int main(int argc, char *argv[])
 
     listen(listen_fd, LISTEN_BACKLOG);
 
-    /* Setup signal handler */
+    /* Setup signal handlers (Phase 2.7) */
     struct sigaction sa;
     sa.sa_handler = int_handler;
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = 0;
     sigaction(SIGINT, &sa, NULL);
+    sigaction(SIGTERM, &sa, NULL);  /* Also handle SIGTERM */
+
+    /* Ignore SIGPIPE (write to closed socket) - handle errors instead */
+    signal(SIGPIPE, SIG_IGN);
 
     printf("Server listening on port %s\n", port);
 
@@ -159,29 +181,61 @@ int main(int argc, char *argv[])
         }
     }
 
-    /* Shutdown sequence */
-    printf("\n[Main] Shutting down server...\n");
-    
+    /* -------------------- Shutdown Sequence (Phase 2.7) -------------------- */
+    printf("\n[Main] ========================================\n");
+    printf("[Main] GRACEFUL SHUTDOWN INITIATED\n");
+    printf("[Main] ========================================\n");
+
+    /* Ensure queues are signaled (may have been done by signal handler) */
     client_queue_signal_shutdown(&client_queue);
     task_queue_signal_shutdown(&task_queue);
-    
-    /* Wait for all threads to finish */
-    printf("[Main] Waiting for client threads to finish...\n");
-    for (int i = 0; i < CLIENT_THREAD_COUNT; i++)
-        pthread_join(client_threads[i], NULL);
-    
-    printf("[Main] Waiting for worker threads to finish...\n");
-    for (int i = 0; i < WORKER_THREAD_COUNT; i++)
-        pthread_join(worker_threads[i], NULL);
 
-    /* Clean up resources */
-    printf("[Main] Cleaning up resources...\n");
+    /* Wait for client threads to finish processing their current clients */
+    printf("[Main] Step 1: Waiting for client threads to finish...\n");
+    for (int i = 0; i < CLIENT_THREAD_COUNT; i++)
+    {
+        void *retval;
+        int rc = pthread_join(client_threads[i], &retval);
+        if (rc == 0)
+            printf("[Main]   Client thread %d joined successfully\n", i);
+        else
+            fprintf(stderr, "[Main]   Error joining client thread %d: %d\n", i, rc);
+    }
+    printf("[Main] All client threads terminated\n");
+
+    /* Wait for worker threads to finish processing their current tasks */
+    printf("[Main] Step 2: Waiting for worker threads to finish...\n");
+    for (int i = 0; i < WORKER_THREAD_COUNT; i++)
+    {
+        void *retval;
+        int rc = pthread_join(worker_threads[i], &retval);
+        if (rc == 0)
+            printf("[Main]   Worker thread %d joined successfully\n", i);
+        else
+            fprintf(stderr, "[Main]   Error joining worker thread %d: %d\n", i, rc);
+    }
+    printf("[Main] All worker threads terminated\n");
+
+    /* Clean up resources in reverse order of initialization */
+    printf("[Main] Step 3: Cleaning up resources...\n");
+
+    printf("[Main]   Destroying file lock manager...\n");
     file_lock_manager_destroy(&global_file_lock_manager);
+
+    printf("[Main]   Destroying session manager...\n");
     session_manager_destroy(&session_manager);
+
+    printf("[Main]   Destroying client queue...\n");
     client_queue_destroy(&client_queue);
+
+    printf("[Main]   Destroying task queue...\n");
     task_queue_destroy(&task_queue);
+
+    printf("[Main]   Destroying user database...\n");
     user_database_destroy(&global_user_db);
 
-    printf("[Main] Server shutdown complete\n");
+    printf("[Main] ========================================\n");
+    printf("[Main] SERVER SHUTDOWN COMPLETE\n");
+    printf("[Main] ========================================\n");
     return 0;
 }

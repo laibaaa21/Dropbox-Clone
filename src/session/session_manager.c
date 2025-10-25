@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/socket.h>
 
 /* Hash function for session IDs */
 static uint32_t hash_session_id(uint64_t session_id)
@@ -41,24 +42,30 @@ void session_manager_destroy(SessionManager *mgr)
 
     pthread_mutex_lock(&mgr->manager_mtx);
 
-    /* Clean up all remaining sessions */
+    /* Clean up all remaining sessions (Phase 2.7: Enhanced cleanup) */
+    int active_sessions = 0;
     for (int i = 0; i < MAX_SESSIONS; i++)
     {
         if (mgr->sessions[i])
         {
             Session *session = mgr->sessions[i];
-            
+            active_sessions++;
+
             /* Mark inactive and destroy response */
             session->is_active = false;
             response_destroy(&session->response);
             pthread_mutex_destroy(&session->session_mtx);
-            
+
             /* Close socket if still open */
             if (session->socket_fd >= 0)
             {
+                printf("[SessionManager] Closing socket %d for session %lu\n",
+                       session->socket_fd, session->session_id);
+                shutdown(session->socket_fd, SHUT_RDWR);
                 close(session->socket_fd);
+                session->socket_fd = -1;
             }
-            
+
             free(session);
             mgr->sessions[i] = NULL;
         }
@@ -67,7 +74,7 @@ void session_manager_destroy(SessionManager *mgr)
     pthread_mutex_unlock(&mgr->manager_mtx);
     pthread_mutex_destroy(&mgr->manager_mtx);
 
-    printf("[SessionManager] Destroyed\n");
+    printf("[SessionManager] Destroyed (%d active sessions cleaned up)\n", active_sessions);
 }
 
 uint64_t session_create(SessionManager *mgr, int socket_fd)
