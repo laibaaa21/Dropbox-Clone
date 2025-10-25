@@ -5,10 +5,12 @@
 #include <sys/socket.h>
 #include <netdb.h>
 #include <errno.h>
+#include <stdbool.h>
 
-#define BUFFER_SIZE 4096
+#define BUFFER_SIZE 8192
+#define CMD_BUFFER_SIZE 512
 
-/* Simple test client for Dropbox Clone server */
+/* Dropbox Clone Client - Interactive client with authentication support */
 
 int connect_to_server(const char *host, const char *port)
 {
@@ -42,19 +44,121 @@ int connect_to_server(const char *host, const char *port)
 
     if (rp == NULL)
     {
-        fprintf(stderr, "Could not connect\n");
+        fprintf(stderr, "Could not connect to %s:%s\n", host, port);
         return -1;
     }
 
     return sockfd;
 }
 
-void send_upload_command(int sockfd, const char *filename)
+ssize_t recv_response(int sockfd, char *buffer, size_t bufsize)
+{
+    ssize_t bytes = recv(sockfd, buffer, bufsize - 1, 0);
+    if (bytes > 0)
+    {
+        buffer[bytes] = '\0';
+    }
+    return bytes;
+}
+
+bool authenticate(int sockfd)
+{
+    char command[CMD_BUFFER_SIZE];
+    char username[64];
+    char password[256];
+    char choice[10];
+    char response[BUFFER_SIZE];
+
+    /* Read welcome message */
+    ssize_t bytes = recv_response(sockfd, response, sizeof(response));
+    if (bytes > 0)
+    {
+        printf("%s", response);
+    }
+
+    while (1)
+    {
+        printf("\nChoose an option:\n");
+        printf("1. SIGNUP (Create new account)\n");
+        printf("2. LOGIN (Existing account)\n");
+        printf("3. QUIT\n");
+        printf("Enter choice: ");
+        fflush(stdout);
+
+        if (fgets(choice, sizeof(choice), stdin) == NULL)
+            return false;
+
+        choice[strcspn(choice, "\n")] = 0; /* Remove newline */
+
+        if (strcmp(choice, "3") == 0)
+        {
+            return false;
+        }
+        else if (strcmp(choice, "1") == 0 || strcmp(choice, "2") == 0)
+        {
+            printf("Username: ");
+            fflush(stdout);
+            if (fgets(username, sizeof(username), stdin) == NULL)
+                return false;
+            username[strcspn(username, "\n")] = 0;
+
+            printf("Password: ");
+            fflush(stdout);
+            if (fgets(password, sizeof(password), stdin) == NULL)
+                return false;
+            password[strcspn(password, "\n")] = 0;
+
+            /* Send authentication command */
+            if (strcmp(choice, "1") == 0)
+            {
+                snprintf(command, sizeof(command), "SIGNUP %s %s\n", username, password);
+            }
+            else
+            {
+                snprintf(command, sizeof(command), "LOGIN %s %s\n", username, password);
+            }
+
+            send(sockfd, command, strlen(command), 0);
+
+            /* Receive response */
+            bytes = recv_response(sockfd, response, sizeof(response));
+            if (bytes > 0)
+            {
+                printf("%s", response);
+
+                /* Check if authentication succeeded */
+                if (strstr(response, "SIGNUP OK") || strstr(response, "LOGIN OK"))
+                {
+                    /* Read the file menu message */
+                    bytes = recv_response(sockfd, response, sizeof(response));
+                    if (bytes > 0)
+                    {
+                        printf("%s", response);
+                    }
+                    return true;
+                }
+            }
+            else
+            {
+                fprintf(stderr, "Connection lost\n");
+                return false;
+            }
+        }
+        else
+        {
+            printf("Invalid choice. Please enter 1, 2, or 3.\n");
+        }
+    }
+
+    return false;
+}
+
+void handle_upload(int sockfd, const char *filename)
 {
     FILE *fp = fopen(filename, "rb");
     if (!fp)
     {
-        perror("fopen");
+        fprintf(stderr, "Error: Cannot open file '%s': %s\n", filename, strerror(errno));
         return;
     }
 
@@ -63,100 +167,260 @@ void send_upload_command(int sockfd, const char *filename)
     long filesize = ftell(fp);
     fseek(fp, 0, SEEK_SET);
 
-    /* Send UPLOAD command */
-    char cmd[512];
-    snprintf(cmd, sizeof(cmd), "UPLOAD %s %ld\n", filename, filesize);
+    /* Extract basename from path (just the filename without directory) */
+    const char *basename = strrchr(filename, '/');
+    if (basename)
+        basename++; /* Skip the '/' */
+    else
+        basename = filename; /* No path, just filename */
+
+    printf("Uploading '%s' (%ld bytes)...\n", basename, filesize);
+
+    /* Send UPLOAD command with size (use basename only) */
+    char cmd[CMD_BUFFER_SIZE];
+    snprintf(cmd, sizeof(cmd), "UPLOAD %s %ld\n", basename, filesize);
     send(sockfd, cmd, strlen(cmd), 0);
 
-    /* Send file data */
-    char buf[1024];
+    /* Send file data in chunks */
+    char buf[4096];
+    size_t total_sent = 0;
     size_t n;
     while ((n = fread(buf, 1, sizeof(buf), fp)) > 0)
     {
-        send(sockfd, buf, n, 0);
+        ssize_t sent = send(sockfd, buf, n, 0);
+        if (sent < 0)
+        {
+            fprintf(stderr, "Error sending file data: %s\n", strerror(errno));
+            fclose(fp);
+            return;
+        }
+        total_sent += sent;
     }
 
     fclose(fp);
+    printf("Sent %zu bytes\n", total_sent);
 
     /* Receive response */
     char response[BUFFER_SIZE];
-    ssize_t bytes = recv(sockfd, response, sizeof(response) - 1, 0);
+    ssize_t bytes = recv_response(sockfd, response, sizeof(response));
     if (bytes > 0)
     {
-        response[bytes] = '\0';
-        printf("Server response:\n%s\n", response);
+        printf("Server: %s", response);
     }
 }
 
-void send_download_command(int sockfd, const char *filename)
+void handle_download(int sockfd, const char *filename)
 {
-    char cmd[512];
+    char cmd[CMD_BUFFER_SIZE];
     snprintf(cmd, sizeof(cmd), "DOWNLOAD %s\n", filename);
     send(sockfd, cmd, strlen(cmd), 0);
 
-    /* Receive file data */
+    printf("Downloading '%s'...\n", filename);
+
+    /* Receive file data and response */
     char buf[BUFFER_SIZE];
     FILE *fp = fopen(filename, "wb");
     if (!fp)
     {
-        perror("fopen download");
+        fprintf(stderr, "Error: Cannot create file '%s': %s\n", filename, strerror(errno));
+        /* Still need to drain the response */
+        ssize_t bytes;
+        while ((bytes = recv(sockfd, buf, sizeof(buf), 0)) > 0)
+        {
+            if (strstr(buf, "DOWNLOAD") || strstr(buf, "ERROR"))
+                break;
+        }
         return;
     }
 
     ssize_t bytes;
+    size_t total_received = 0;
+    bool found_end = false;
+
     while ((bytes = recv(sockfd, buf, sizeof(buf), 0)) > 0)
     {
-        fwrite(buf, 1, bytes, fp);
+        /* Look for end marker */
+        char *end_marker = strstr(buf, "\nDOWNLOAD OK");
+        if (!end_marker)
+            end_marker = strstr(buf, "DOWNLOAD FAILED");
+        if (!end_marker)
+            end_marker = strstr(buf, "ERROR");
+
+        if (end_marker)
+        {
+            /* Write data before the marker */
+            size_t data_len = end_marker - buf;
+            if (data_len > 0)
+            {
+                fwrite(buf, 1, data_len, fp);
+                total_received += data_len;
+            }
+            printf("Server: %s", end_marker);
+            found_end = true;
+            break;
+        }
+        else
+        {
+            /* Write all data */
+            fwrite(buf, 1, bytes, fp);
+            total_received += bytes;
+        }
     }
 
     fclose(fp);
-    printf("Downloaded: %s\n", filename);
+
+    if (found_end && total_received > 0)
+    {
+        printf("Downloaded %zu bytes to '%s'\n", total_received, filename);
+    }
+    else if (!found_end)
+    {
+        fprintf(stderr, "Download may be incomplete (connection closed)\n");
+    }
 }
 
-void send_delete_command(int sockfd, const char *filename)
+void handle_delete(int sockfd, const char *filename)
 {
-    char cmd[512];
+    char cmd[CMD_BUFFER_SIZE];
     snprintf(cmd, sizeof(cmd), "DELETE %s\n", filename);
     send(sockfd, cmd, strlen(cmd), 0);
 
     char response[BUFFER_SIZE];
-    ssize_t bytes = recv(sockfd, response, sizeof(response) - 1, 0);
+    ssize_t bytes = recv_response(sockfd, response, sizeof(response));
     if (bytes > 0)
     {
-        response[bytes] = '\0';
-        printf("Server response: %s\n", response);
+        printf("Server: %s", response);
     }
 }
 
-void send_list_command(int sockfd)
+void handle_list(int sockfd)
 {
     char cmd[] = "LIST\n";
     send(sockfd, cmd, strlen(cmd), 0);
 
     char response[BUFFER_SIZE];
-    ssize_t bytes = recv(sockfd, response, sizeof(response) - 1, 0);
+    ssize_t bytes = recv_response(sockfd, response, sizeof(response));
     if (bytes > 0)
     {
-        response[bytes] = '\0';
-        printf("Server response:\n%s\n", response);
+        printf("Files in your storage:\n");
+        printf("%s", response);
     }
+}
+
+void interactive_session(int sockfd)
+{
+    char line[CMD_BUFFER_SIZE];
+    char command[64];
+    char arg1[256];
+
+    printf("\n=== Interactive Session Started ===\n");
+    printf("Type 'help' for available commands\n\n");
+
+    while (1)
+    {
+        printf("dbc> ");
+        fflush(stdout);
+
+        if (fgets(line, sizeof(line), stdin) == NULL)
+        {
+            break;
+        }
+
+        /* Remove trailing newline */
+        line[strcspn(line, "\n")] = 0;
+
+        /* Skip empty lines */
+        if (strlen(line) == 0)
+            continue;
+
+        /* Parse command */
+        command[0] = '\0';
+        arg1[0] = '\0';
+        sscanf(line, "%63s %255s", command, arg1);
+
+        /* Handle commands */
+        if (strcmp(command, "help") == 0)
+        {
+            printf("\nAvailable commands:\n");
+            printf("  upload <filename>   - Upload a file to server\n");
+            printf("  download <filename> - Download a file from server\n");
+            printf("  delete <filename>   - Delete a file from server\n");
+            printf("  list                - List all your files\n");
+            printf("  quit                - Exit the client\n");
+            printf("  help                - Show this help message\n\n");
+        }
+        else if (strcmp(command, "upload") == 0)
+        {
+            if (strlen(arg1) == 0)
+            {
+                printf("Usage: upload <filename>\n");
+            }
+            else
+            {
+                handle_upload(sockfd, arg1);
+            }
+        }
+        else if (strcmp(command, "download") == 0)
+        {
+            if (strlen(arg1) == 0)
+            {
+                printf("Usage: download <filename>\n");
+            }
+            else
+            {
+                handle_download(sockfd, arg1);
+            }
+        }
+        else if (strcmp(command, "delete") == 0)
+        {
+            if (strlen(arg1) == 0)
+            {
+                printf("Usage: delete <filename>\n");
+            }
+            else
+            {
+                handle_delete(sockfd, arg1);
+            }
+        }
+        else if (strcmp(command, "list") == 0)
+        {
+            handle_list(sockfd);
+        }
+        else if (strcmp(command, "quit") == 0 || strcmp(command, "exit") == 0)
+        {
+            printf("Sending QUIT command...\n");
+            send(sockfd, "QUIT\n", 5, 0);
+            break;
+        }
+        else
+        {
+            printf("Unknown command: '%s'. Type 'help' for available commands.\n", command);
+        }
+    }
+
+    printf("\n=== Session Ended ===\n");
+}
+
+void print_usage(const char *progname)
+{
+    fprintf(stderr, "Usage: %s <host> <port>\n", progname);
+    fprintf(stderr, "\nDropbox Clone Client - Interactive Mode\n");
+    fprintf(stderr, "\nExample:\n");
+    fprintf(stderr, "  %s localhost 10985\n\n", progname);
 }
 
 int main(int argc, char *argv[])
 {
     if (argc < 3)
     {
-        fprintf(stderr, "Usage: %s <host> <port> [command] [args...]\n", argv[0]);
-        fprintf(stderr, "Commands:\n");
-        fprintf(stderr, "  upload <filename>\n");
-        fprintf(stderr, "  download <filename>\n");
-        fprintf(stderr, "  delete <filename>\n");
-        fprintf(stderr, "  list\n");
+        print_usage(argv[0]);
         return 1;
     }
 
     const char *host = argv[1];
     const char *port = argv[2];
+
+    printf("Connecting to %s:%s...\n", host, port);
 
     int sockfd = connect_to_server(host, port);
     if (sockfd < 0)
@@ -164,41 +428,20 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    /* Read welcome message */
-    char welcome[BUFFER_SIZE];
-    ssize_t bytes = recv(sockfd, welcome, sizeof(welcome) - 1, 0);
-    if (bytes > 0)
+    printf("Connected successfully!\n\n");
+
+    /* Authenticate first */
+    if (!authenticate(sockfd))
     {
-        welcome[bytes] = '\0';
-        printf("%s\n", welcome);
+        printf("Authentication failed or cancelled. Goodbye!\n");
+        close(sockfd);
+        return 1;
     }
 
-    /* Execute command */
-    if (argc >= 4)
-    {
-        const char *command = argv[3];
+    printf("\n=== Authentication Successful! ===\n");
 
-        if (strcmp(command, "upload") == 0 && argc >= 5)
-        {
-            send_upload_command(sockfd, argv[4]);
-        }
-        else if (strcmp(command, "download") == 0 && argc >= 5)
-        {
-            send_download_command(sockfd, argv[4]);
-        }
-        else if (strcmp(command, "delete") == 0 && argc >= 5)
-        {
-            send_delete_command(sockfd, argv[4]);
-        }
-        else if (strcmp(command, "list") == 0)
-        {
-            send_list_command(sockfd);
-        }
-        else
-        {
-            fprintf(stderr, "Unknown command: %s\n", command);
-        }
-    }
+    /* Start interactive session */
+    interactive_session(sockfd);
 
     close(sockfd);
     return 0;
