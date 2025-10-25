@@ -59,7 +59,7 @@ Server listening on port 12345
 
 Keep this terminal open — it will display logs of client connections and file operations.
 
-![Server Terminal](ss/terminal1.jpg)
+![Server Terminal](images/terminal1.jpg)
 
 ### 🧩 Step 4 — Run the Client (Testing)
 
@@ -86,7 +86,7 @@ SIGNUP OK
 LOGIN OK
 ```
 
-![SIGNUP and LOGIN](ss/signup_login.jpg)
+![SIGNUP and LOGIN](images/signup_login.jpg)
 
 ---
 
@@ -112,7 +112,7 @@ Hello World
 cat storage/user1/test.txt
 ```
 
-![Upload Test](ss/upload.jpg)
+![Upload Test](images/upload.jpg)
 
 ---
 
@@ -124,7 +124,7 @@ cat storage/user1/test.txt
 ( printf "LIST\n" ) | nc localhost 12345
 ```
 
-![List Files](ss/list.jpg)
+![List Files](images/list.jpg)
 
 ---
 
@@ -144,7 +144,7 @@ Hello World
 DOWNLOAD OK
 ```
 
-![Download Test](ss/download.jpg)
+![Download Test](images/download.jpg)
 
 ---
 
@@ -174,7 +174,7 @@ DELETE OK
 LIST OK
 ```
 
-![Delete Test](ss/delete.jpg)
+![Delete Test](images/delete.jpg)
 
 ---
 
