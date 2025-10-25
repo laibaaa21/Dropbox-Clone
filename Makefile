@@ -1,6 +1,7 @@
 CC = gcc
 CFLAGS = -Wall -Wextra -pthread -g -O2
 INCLUDES = -Isrc
+LDFLAGS = -lcrypto
 
 # Server source files
 SERVER_SRCS = src/main.c \
@@ -9,7 +10,9 @@ SERVER_SRCS = src/main.c \
               src/queue/client_queue.c \
               src/queue/task_queue.c \
               src/storage/file_ops.c \
-              src/session/response_queue.c
+              src/session/response_queue.c \
+              src/auth/auth.c \
+              src/auth/user_metadata.c
 
 SERVER_OBJS = $(SERVER_SRCS:.c=.o)
 SERVER_TARGET = server
@@ -25,7 +28,7 @@ CLIENT_TARGET = dbc_client
 all: $(SERVER_TARGET) $(CLIENT_TARGET)
 
 $(SERVER_TARGET): $(SERVER_OBJS)
-	$(CC) $(CFLAGS) -o $@ $^ -pthread
+	$(CC) $(CFLAGS) -o $@ $^ -pthread $(LDFLAGS)
 
 $(CLIENT_TARGET): $(CLIENT_OBJS)
 	$(CC) $(CFLAGS) -o $@ $^

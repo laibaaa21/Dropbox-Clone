@@ -2,6 +2,7 @@
 #include "../server.h"
 #include "../queue/task_queue.h"
 #include "../session/response_queue.h"
+#include "../auth/user_metadata.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -55,6 +56,15 @@ void *worker_worker(void *arg)
             else
             {
                 printf("[Worker] Upload complete: %s (%zu bytes)\n", task.filename, written);
+
+                /* Update user metadata */
+                UserMetadata *user = user_get(&global_user_db, task.username);
+                if (user)
+                {
+                    user_add_file(user, task.filename, task.filesize);
+                    user_save_metadata(user);
+                }
+
                 response_set(task.response, RESPONSE_SUCCESS,
                              "UPLOAD OK\n", NULL, 0);
             }
@@ -115,6 +125,15 @@ void *worker_worker(void *arg)
             if (remove(path) == 0)
             {
                 printf("[Worker] Delete complete: %s\n", task.filename);
+
+                /* Update user metadata */
+                UserMetadata *user = user_get(&global_user_db, task.username);
+                if (user)
+                {
+                    user_remove_file(user, task.filename);
+                    user_save_metadata(user);
+                }
+
                 response_set(task.response, RESPONSE_SUCCESS,
                              "DELETE OK\n", NULL, 0);
             }

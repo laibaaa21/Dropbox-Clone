@@ -3,6 +3,7 @@
 #include "threads/worker_thread.h"
 #include "queue/client_queue.h"
 #include "queue/task_queue.h"
+#include "auth/user_metadata.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -53,6 +54,14 @@ int main(int argc, char *argv[])
         fprintf(stderr, "Queue initialization failed\n");
         return 1;
     }
+
+    /* Initialize user database */
+    if (user_database_init(&global_user_db, 256) != 0)
+    {
+        fprintf(stderr, "User database initialization failed\n");
+        return 1;
+    }
+    printf("User database initialized\n");
 
     /* Setup server socket */
     struct addrinfo hints, *res, *rp;
@@ -134,5 +143,6 @@ int main(int argc, char *argv[])
 
     client_queue_destroy(&client_queue);
     task_queue_destroy(&task_queue);
+    user_database_destroy(&global_user_db);
     return 0;
 }
