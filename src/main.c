@@ -136,19 +136,42 @@ int main(int argc, char *argv[])
     freeaddrinfo(res);
     if (rp == NULL)
     {
+        fprintf(stderr, "[Main] Failed to bind to port %s\n", port);
         perror("bind");
+        file_lock_manager_destroy(&global_file_lock_manager);
+        user_database_destroy(&global_user_db);
+        session_manager_destroy(&session_manager);
+        client_queue_destroy(&client_queue);
+        task_queue_destroy(&task_queue);
         return 1;
     }
 
-    listen(listen_fd, LISTEN_BACKLOG);
+    if (listen(listen_fd, LISTEN_BACKLOG) != 0)
+    {
+        fprintf(stderr, "[Main] Failed to listen on socket\n");
+        perror("listen");
+        close(listen_fd);
+        file_lock_manager_destroy(&global_file_lock_manager);
+        user_database_destroy(&global_user_db);
+        session_manager_destroy(&session_manager);
+        client_queue_destroy(&client_queue);
+        task_queue_destroy(&task_queue);
+        return 1;
+    }
 
     /* Setup signal handlers (Phase 2.7) */
     struct sigaction sa;
     sa.sa_handler = int_handler;
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = 0;
-    sigaction(SIGINT, &sa, NULL);
-    sigaction(SIGTERM, &sa, NULL);  /* Also handle SIGTERM */
+    if (sigaction(SIGINT, &sa, NULL) != 0)
+    {
+        perror("[Main] Failed to setup SIGINT handler");
+    }
+    if (sigaction(SIGTERM, &sa, NULL) != 0)
+    {
+        perror("[Main] Failed to setup SIGTERM handler");
+    }
 
     /* Ignore SIGPIPE (write to closed socket) - handle errors instead */
     signal(SIGPIPE, SIG_IGN);
@@ -156,10 +179,27 @@ int main(int argc, char *argv[])
     printf("Server listening on port %s\n", port);
 
     /* Create thread pools */
+    printf("[Main] Creating worker thread pool (%d threads)...\n", WORKER_THREAD_COUNT);
     for (int i = 0; i < WORKER_THREAD_COUNT; i++)
-        pthread_create(&worker_threads[i], NULL, worker_worker, NULL);
+    {
+        int rc = pthread_create(&worker_threads[i], NULL, worker_worker, NULL);
+        if (rc != 0)
+        {
+            fprintf(stderr, "[Main] Failed to create worker thread %d: %s\n", i, strerror(rc));
+            /* Continue with fewer threads rather than failing completely */
+        }
+    }
+
+    printf("[Main] Creating client thread pool (%d threads)...\n", CLIENT_THREAD_COUNT);
     for (int i = 0; i < CLIENT_THREAD_COUNT; i++)
-        pthread_create(&client_threads[i], NULL, client_worker, NULL);
+    {
+        int rc = pthread_create(&client_threads[i], NULL, client_worker, NULL);
+        if (rc != 0)
+        {
+            fprintf(stderr, "[Main] Failed to create client thread %d: %s\n", i, strerror(rc));
+            /* Continue with fewer threads rather than failing completely */
+        }
+    }
 
     /* Accept loop */
     while (keep_running)
@@ -176,7 +216,9 @@ int main(int argc, char *argv[])
         }
         if (client_queue_push(&client_queue, cfd) != 0)
         {
-            fprintf(stderr, "Client queue full\n");
+            fprintf(stderr, "[Main] Client queue full, rejecting connection\n");
+            const char *reject_msg = "ERROR: Server busy, please try again later\n";
+            send(cfd, reject_msg, strlen(reject_msg), 0);
             close(cfd);
         }
     }

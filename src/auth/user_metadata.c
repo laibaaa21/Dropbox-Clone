@@ -344,6 +344,7 @@ int user_load_metadata(UserMetadata *user, const char *username)
                 {
                     int idx = user->file_count;
                     strncpy(user->files[idx].filename, filename, 255);
+                    user->files[idx].filename[255] = '\0';  /* Ensure null-termination */
                     user->files[idx].size = size;
                     user->files[idx].timestamp = (time_t)timestamp;
                 }

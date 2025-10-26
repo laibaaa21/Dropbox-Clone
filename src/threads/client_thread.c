@@ -193,6 +193,7 @@ void *client_worker(void *arg)
             memset(&t, 0, sizeof(t));
             t.session_id = session_id;
             strncpy(t.username, session->username, sizeof(t.username) - 1);
+            t.username[sizeof(t.username) - 1] = '\0';  /* Ensure null-termination */
             t.data_buffer = NULL;
 
             /* Parse command */
