@@ -26,6 +26,12 @@ typedef struct Session
     volatile bool is_active;              /* Session active flag (checked by workers) */
     Response response;                    /* Response structure for this session */
     pthread_mutex_t session_mtx;          /* Mutex for per-session operations */
+
+    /* Session lifetime tracking (Phase 2.9 enhancements) */
+    time_t created_at;                    /* Session creation timestamp */
+    time_t authenticated_at;              /* Authentication timestamp (0 if not authenticated) */
+    time_t last_activity;                 /* Last activity timestamp */
+    uint64_t operations_count;            /* Number of operations performed */
 } Session;
 
 /**
@@ -37,6 +43,11 @@ typedef struct SessionManager
     Session *sessions[MAX_SESSIONS];      /* Hash table of sessions */
     pthread_mutex_t manager_mtx;          /* Protects the session map */
     uint64_t next_session_id;             /* Counter for session ID generation */
+
+    /* Session statistics (Phase 2.9 enhancements) */
+    uint64_t total_sessions_created;      /* Total sessions created since start */
+    uint64_t active_session_count;        /* Current number of active sessions */
+    uint64_t peak_session_count;          /* Peak concurrent sessions */
 } SessionManager;
 
 /* -------------------- Function Prototypes -------------------- */
@@ -93,5 +104,42 @@ void session_destroy(SessionManager *mgr, uint64_t session_id);
  * @param username Username to set
  */
 void session_set_username(Session *session, const char *username);
+
+/**
+ * Update last activity timestamp for a session
+ * Should be called whenever the session performs an operation
+ * @param session Session pointer
+ */
+void session_update_activity(Session *session);
+
+/**
+ * Increment operation counter for a session
+ * @param session Session pointer
+ */
+void session_increment_operations(Session *session);
+
+/**
+ * Get session statistics
+ * @param mgr Session manager
+ * @param active_count Output: current active sessions
+ * @param total_created Output: total sessions created
+ * @param peak_count Output: peak concurrent sessions
+ */
+void session_get_statistics(SessionManager *mgr, uint64_t *active_count,
+                           uint64_t *total_created, uint64_t *peak_count);
+
+/**
+ * Print all active sessions (for debugging)
+ * @param mgr Session manager
+ */
+void session_print_active(SessionManager *mgr);
+
+/**
+ * Check if session has been idle for too long
+ * @param session Session pointer
+ * @param timeout_seconds Idle timeout in seconds
+ * @return true if session is idle beyond timeout, false otherwise
+ */
+bool session_is_idle(Session *session, time_t timeout_seconds);
 
 #endif /* SESSION_MANAGER_H */

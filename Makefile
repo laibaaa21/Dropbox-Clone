@@ -13,7 +13,8 @@ SERVER_SRCS = src/main.c \
               src/session/session_manager.c \
               src/auth/auth.c \
               src/auth/user_metadata.c \
-              src/sync/file_locks.c
+              src/sync/file_locks.c \
+              src/utils/network_utils.c
 
 SERVER_OBJS = $(SERVER_SRCS:.c=.o)
 SERVER_TARGET = server
