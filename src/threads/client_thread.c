@@ -200,13 +200,7 @@ void *client_worker(void *arg)
             if (sscanf(cmd, "UPLOAD %255s %zu", t.filename, &t.filesize) == 2)
             {
                 /* Check quota before receiving data */
-                UserMetadata *user = user_get(&global_user_db, session->username);
-                if (!user)
-                {
-                    send_error(cfd, "UPLOAD ERROR: User not found\n");
-                    continue;
-                }
-                if (!user_check_quota(user, t.filesize))
+                if (!user_check_quota(session->username, t.filesize))
                 {
                     send_error(cfd, "UPLOAD ERROR: Quota exceeded\n");
                     continue;

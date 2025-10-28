@@ -64,9 +64,8 @@ void *worker_worker(void *arg)
         {
         case TASK_UPLOAD:
         {
-            /* Phase 2.4: Get user and acquire per-user lock */
-            UserMetadata *user = user_get(&global_user_db, task.username);
-            if (!user)
+            /* Verify user exists */
+            if (!user_exists(task.username))
             {
                 deliver_response(task.session_id, RESPONSE_ERROR,
                                 "UPLOAD FAILED: User not found\n", NULL, 0);
@@ -75,14 +74,10 @@ void *worker_worker(void *arg)
                 break;
             }
 
-            /* Acquire per-user lock for entire upload operation */
-            pthread_mutex_lock(&user->mtx);
-
             /* Phase 2.5: Acquire per-file lock */
             FileLock *file_lock = file_lock_acquire(&global_file_lock_manager, task.username, task.filename);
             if (!file_lock)
             {
-                pthread_mutex_unlock(&user->mtx);
                 deliver_response(task.session_id, RESPONSE_ERROR,
                                 "UPLOAD FAILED: Could not acquire file lock\n", NULL, 0);
                 if (task.data_buffer)
@@ -98,7 +93,6 @@ void *worker_worker(void *arg)
                 fprintf(stderr, "[Worker] fopen failed for upload '%s': %s\n",
                        path, strerror(errno));
                 file_lock_release(&global_file_lock_manager, file_lock);
-                pthread_mutex_unlock(&user->mtx);
 
                 /* Provide specific error message based on errno */
                 if (errno == EACCES || errno == EPERM)
@@ -140,7 +134,6 @@ void *worker_worker(void *arg)
                 fprintf(stderr, "[Worker] Upload incomplete: wrote %zu/%zu bytes, ferror=%d\n",
                         written, task.filesize, fwrite_error);
                 file_lock_release(&global_file_lock_manager, file_lock);
-                pthread_mutex_unlock(&user->mtx);
 
                 /* Try to remove incomplete file */
                 if (remove(path) != 0)
@@ -156,107 +149,20 @@ void *worker_worker(void *arg)
             {
                 printf("[Worker] Upload complete: %s (%zu bytes)\n", task.filename, written);
 
-                /* Update user metadata (already holding user lock) */
-                /* Check if file already exists (update size if so) */
-                bool file_exists = false;
-                for (int i = 0; i < user->file_count; i++)
-                {
-                    if (strcmp(user->files[i].filename, task.filename) == 0)
-                    {
-                        size_t old_size = user->files[i].size;
-                        user->files[i].size = task.filesize;
-                        time_t now = time(NULL);
-                        if (now == (time_t)-1)
-                        {
-                            fprintf(stderr, "[Worker] time() failed: %s\n", strerror(errno));
-                            now = 0;
-                        }
-                        user->files[i].timestamp = now;
-                        user->quota_used = user->quota_used - old_size + task.filesize;
-                        file_exists = true;
-                        break;
-                    }
-                }
+                /* Update file metadata in database */
+                int meta_result = user_add_file(task.username, task.filename, task.filesize);
 
-                /* Add new file if it doesn't exist */
-                if (!file_exists)
-                {
-                    /* Expand array if needed */
-                    if (user->file_count >= user->file_capacity)
-                    {
-                        int new_capacity = user->file_capacity * 2;
-                        FileMetadata *new_files = realloc(user->files, new_capacity * sizeof(FileMetadata));
-                        if (new_files)
-                        {
-                            user->files = new_files;
-                            user->file_capacity = new_capacity;
-                        }
-                    }
-
-                    if (user->file_count < user->file_capacity)
-                    {
-                        strncpy(user->files[user->file_count].filename, task.filename, 255);
-                        user->files[user->file_count].filename[255] = '\0';  /* Ensure null-termination */
-                        user->files[user->file_count].size = task.filesize;
-                        time_t now = time(NULL);
-                        if (now == (time_t)-1)
-                        {
-                            fprintf(stderr, "[Worker] time() failed: %s\n", strerror(errno));
-                            now = 0;
-                        }
-                        user->files[user->file_count].timestamp = now;
-                        user->file_count++;
-                        user->quota_used += task.filesize;
-                    }
-                    else
-                    {
-                        fprintf(stderr, "[Worker] Cannot add file: file_capacity exceeded\n");
-                    }
-                }
-
-                /* Save metadata (already holding lock) */
-                FILE *meta_fp = NULL;
-                char meta_path[512];
-                snprintf(meta_path, sizeof(meta_path), "storage/%s/metadata.txt", user->username);
-                char temp_path[512];
-                snprintf(temp_path, sizeof(temp_path), "storage/%s/metadata.tmp", user->username);
-
-                meta_fp = fopen(temp_path, "w");
-                if (meta_fp)
-                {
-                    fprintf(meta_fp, "username=%s\n", user->username);
-                    fprintf(meta_fp, "quota_used=%zu\n", user->quota_used);
-                    fprintf(meta_fp, "quota_limit=%zu\n", user->quota_limit);
-                    fprintf(meta_fp, "file_count=%d\n", user->file_count);
-                    for (int i = 0; i < user->file_count; i++)
-                    {
-                        fprintf(meta_fp, "file=%s,%zu,%ld\n",
-                                user->files[i].filename,
-                                user->files[i].size,
-                                (long)user->files[i].timestamp);
-                    }
-                    if (fclose(meta_fp) != 0)
-                    {
-                        fprintf(stderr, "[Worker] fclose failed for metadata file (UPLOAD): %s\n",
-                               strerror(errno));
-                    }
-
-                    /* Atomic rename */
-                    if (rename(temp_path, meta_path) != 0)
-                    {
-                        fprintf(stderr, "[Worker] rename failed for metadata (UPLOAD): %s\n",
-                               strerror(errno));
-                    }
-                }
-                else
-                {
-                    fprintf(stderr, "[Worker] fopen failed for metadata temp file (UPLOAD): %s\n",
-                           strerror(errno));
-                }
-
-                /* Phase 2.5: Release file lock, then user lock */
+                /* Release file lock */
                 file_lock_release(&global_file_lock_manager, file_lock);
-                pthread_mutex_unlock(&user->mtx);
+
+                if (meta_result != 0)
+                {
+                    fprintf(stderr, "[Worker] Warning: Failed to update metadata for '%s'\n",
+                            task.filename);
+                    /* File was written successfully, but metadata update failed */
+                    /* This is a warning, not a critical error */
+                }
+
                 deliver_response(task.session_id, RESPONSE_SUCCESS,
                                 "UPLOAD OK\n", NULL, 0);
             }
@@ -269,23 +175,18 @@ void *worker_worker(void *arg)
 
         case TASK_DOWNLOAD:
         {
-            /* Phase 2.4: Get user and acquire per-user lock */
-            UserMetadata *user = user_get(&global_user_db, task.username);
-            if (!user)
+            /* Verify user exists */
+            if (!user_exists(task.username))
             {
                 deliver_response(task.session_id, RESPONSE_ERROR,
                                 "DOWNLOAD FAILED: User not found\n", NULL, 0);
                 break;
             }
 
-            /* Acquire per-user lock for entire download operation */
-            pthread_mutex_lock(&user->mtx);
-
             /* Phase 2.5: Acquire per-file lock */
             FileLock *file_lock = file_lock_acquire(&global_file_lock_manager, task.username, task.filename);
             if (!file_lock)
             {
-                pthread_mutex_unlock(&user->mtx);
                 deliver_response(task.session_id, RESPONSE_ERROR,
                                 "DOWNLOAD FAILED: Could not acquire file lock\n", NULL, 0);
                 break;
@@ -298,7 +199,6 @@ void *worker_worker(void *arg)
                 fprintf(stderr, "[Worker] fopen failed for download '%s': %s\n",
                        path, strerror(errno));
                 file_lock_release(&global_file_lock_manager, file_lock);
-                pthread_mutex_unlock(&user->mtx);
 
                 /* Provide specific error message */
                 if (errno == ENOENT)
@@ -326,7 +226,6 @@ void *worker_worker(void *arg)
                        path, strerror(errno));
                 fclose(fp);
                 file_lock_release(&global_file_lock_manager, file_lock);
-                pthread_mutex_unlock(&user->mtx);
                 deliver_response(task.session_id, RESPONSE_ERROR,
                                 "DOWNLOAD ERROR: Cannot determine file size\n", NULL, 0);
                 break;
@@ -339,7 +238,6 @@ void *worker_worker(void *arg)
                        path, strerror(errno));
                 fclose(fp);
                 file_lock_release(&global_file_lock_manager, file_lock);
-                pthread_mutex_unlock(&user->mtx);
                 deliver_response(task.session_id, RESPONSE_ERROR,
                                 "DOWNLOAD ERROR: Cannot determine file size\n", NULL, 0);
                 break;
@@ -351,7 +249,6 @@ void *worker_worker(void *arg)
                        path, strerror(errno));
                 fclose(fp);
                 file_lock_release(&global_file_lock_manager, file_lock);
-                pthread_mutex_unlock(&user->mtx);
                 deliver_response(task.session_id, RESPONSE_ERROR,
                                 "DOWNLOAD ERROR: File seek error\n", NULL, 0);
                 break;
@@ -363,7 +260,6 @@ void *worker_worker(void *arg)
             {
                 fclose(fp);
                 file_lock_release(&global_file_lock_manager, file_lock);
-                pthread_mutex_unlock(&user->mtx);
                 deliver_response(task.session_id, RESPONSE_ERROR,
                                 "DOWNLOAD FAILED: Memory allocation failed\n", NULL, 0);
                 break;
@@ -378,9 +274,8 @@ void *worker_worker(void *arg)
                        path, strerror(errno));
             }
 
-            /* Phase 2.5: Release locks after reading */
+            /* Phase 2.5: Release file lock after reading */
             file_lock_release(&global_file_lock_manager, file_lock);
-            pthread_mutex_unlock(&user->mtx);
 
             if (fread_error || read_bytes != (size_t)file_size)
             {
@@ -400,23 +295,18 @@ void *worker_worker(void *arg)
 
         case TASK_DELETE:
         {
-            /* Phase 2.4: Get user and acquire per-user lock */
-            UserMetadata *user = user_get(&global_user_db, task.username);
-            if (!user)
+            /* Verify user exists */
+            if (!user_exists(task.username))
             {
                 deliver_response(task.session_id, RESPONSE_ERROR,
                                 "DELETE FAILED: User not found\n", NULL, 0);
                 break;
             }
 
-            /* Acquire per-user lock for entire delete operation */
-            pthread_mutex_lock(&user->mtx);
-
             /* Phase 2.5: Acquire per-file lock */
             FileLock *file_lock = file_lock_acquire(&global_file_lock_manager, task.username, task.filename);
             if (!file_lock)
             {
-                pthread_mutex_unlock(&user->mtx);
                 deliver_response(task.session_id, RESPONSE_ERROR,
                                 "DELETE FAILED: Could not acquire file lock\n", NULL, 0);
                 break;
@@ -428,66 +318,20 @@ void *worker_worker(void *arg)
             {
                 printf("[Worker] Delete complete: %s\n", task.filename);
 
-                /* Update user metadata (already holding lock) */
-                for (int i = 0; i < user->file_count; i++)
-                {
-                    if (strcmp(user->files[i].filename, task.filename) == 0)
-                    {
-                        user->quota_used -= user->files[i].size;
+                /* Update file metadata in database */
+                int meta_result = user_remove_file(task.username, task.filename);
 
-                        /* Shift remaining files */
-                        for (int j = i; j < user->file_count - 1; j++)
-                        {
-                            user->files[j] = user->files[j + 1];
-                        }
-                        user->file_count--;
-                        break;
-                    }
-                }
-
-                /* Save metadata (already holding lock) */
-                FILE *meta_fp = NULL;
-                char meta_path[512];
-                snprintf(meta_path, sizeof(meta_path), "storage/%s/metadata.txt", user->username);
-                char temp_path[512];
-                snprintf(temp_path, sizeof(temp_path), "storage/%s/metadata.tmp", user->username);
-
-                meta_fp = fopen(temp_path, "w");
-                if (meta_fp)
-                {
-                    fprintf(meta_fp, "username=%s\n", user->username);
-                    fprintf(meta_fp, "quota_used=%zu\n", user->quota_used);
-                    fprintf(meta_fp, "quota_limit=%zu\n", user->quota_limit);
-                    fprintf(meta_fp, "file_count=%d\n", user->file_count);
-                    for (int i = 0; i < user->file_count; i++)
-                    {
-                        fprintf(meta_fp, "file=%s,%zu,%ld\n",
-                                user->files[i].filename,
-                                user->files[i].size,
-                                (long)user->files[i].timestamp);
-                    }
-                    if (fclose(meta_fp) != 0)
-                    {
-                        fprintf(stderr, "[Worker] fclose failed for metadata file (DELETE): %s\n",
-                               strerror(errno));
-                    }
-
-                    /* Atomic rename */
-                    if (rename(temp_path, meta_path) != 0)
-                    {
-                        fprintf(stderr, "[Worker] rename failed for metadata (DELETE): %s\n",
-                               strerror(errno));
-                    }
-                }
-                else
-                {
-                    fprintf(stderr, "[Worker] fopen failed for metadata temp file (DELETE): %s\n",
-                           strerror(errno));
-                }
-
-                /* Phase 2.5: Release locks */
+                /* Release file lock */
                 file_lock_release(&global_file_lock_manager, file_lock);
-                pthread_mutex_unlock(&user->mtx);
+
+                if (meta_result != 0)
+                {
+                    fprintf(stderr, "[Worker] Warning: Failed to update metadata for deleted file '%s'\n",
+                            task.filename);
+                    /* File was deleted successfully, but metadata update failed */
+                    /* This is a warning, not a critical error */
+                }
+
                 deliver_response(task.session_id, RESPONSE_SUCCESS,
                                 "DELETE OK\n", NULL, 0);
             }
@@ -496,7 +340,6 @@ void *worker_worker(void *arg)
                 fprintf(stderr, "[Worker] remove failed for '%s': %s\n",
                        path, strerror(errno));
                 file_lock_release(&global_file_lock_manager, file_lock);
-                pthread_mutex_unlock(&user->mtx);
 
                 /* Provide specific error message */
                 if (errno == ENOENT)
@@ -520,17 +363,13 @@ void *worker_worker(void *arg)
 
         case TASK_LIST:
         {
-            /* Phase 2.4: Get user and acquire per-user lock */
-            UserMetadata *user = user_get(&global_user_db, task.username);
-            if (!user)
+            /* Verify user exists */
+            if (!user_exists(task.username))
             {
                 deliver_response(task.session_id, RESPONSE_ERROR,
                                 "LIST FAILED: User not found\n", NULL, 0);
                 break;
             }
-
-            /* Acquire per-user lock for entire list operation */
-            pthread_mutex_lock(&user->mtx);
 
             snprintf(path, sizeof(path), "storage/%s", task.username);
             DIR *dir = opendir(path);
@@ -538,7 +377,6 @@ void *worker_worker(void *arg)
             {
                 fprintf(stderr, "[Worker] opendir failed for '%s': %s\n",
                        path, strerror(errno));
-                pthread_mutex_unlock(&user->mtx);
 
                 /* Provide specific error message */
                 if (errno == ENOENT)
@@ -595,8 +433,6 @@ void *worker_worker(void *arg)
             {
                 fprintf(stderr, "[Worker] closedir failed: %s\n", strerror(errno));
             }
-
-            pthread_mutex_unlock(&user->mtx);
 
             strncat(list_buffer, "LIST END\n", sizeof(list_buffer) - strlen(list_buffer) - 1);
 

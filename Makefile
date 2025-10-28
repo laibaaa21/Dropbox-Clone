@@ -1,7 +1,7 @@
 CC = gcc
 CFLAGS = -Wall -Wextra -pthread -g -O2
 INCLUDES = -Isrc
-LDFLAGS = -lcrypto
+LDFLAGS = -lcrypto -lsqlite3
 
 # Server source files
 SERVER_SRCS = src/main.c \
@@ -13,6 +13,7 @@ SERVER_SRCS = src/main.c \
               src/session/session_manager.c \
               src/auth/auth.c \
               src/auth/user_metadata.c \
+              src/auth/database.c \
               src/sync/file_locks.c \
               src/utils/network_utils.c
 

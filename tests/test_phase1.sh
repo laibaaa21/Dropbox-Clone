@@ -82,7 +82,7 @@ cleanup() {
     # Remove temp files
     rm -rf "$TEMP_DIR"
 
-    # Clean storage
+    # Clean storage (including SQLite database)
     rm -rf "$TEST_DIR/storage/"*
 }
 
@@ -392,16 +392,22 @@ else
     fail_test "Quota checking function not found in implementation"
 fi
 
-# Verify quota metadata is tracked
-if [ -f "$TEST_DIR/storage/$TEST_USER/metadata.txt" ]; then
-    if grep -q "quota_used" "$TEST_DIR/storage/$TEST_USER/metadata.txt" && \
-       grep -q "quota_limit" "$TEST_DIR/storage/$TEST_USER/metadata.txt"; then
-        pass_test "Quota tracking active in user metadata"
+# Verify quota metadata is tracked (now in SQLite database)
+if [ -f "$TEST_DIR/storage/dropbox.db" ]; then
+    # Check if user exists in database with quota fields
+    DB_CHECK=$(sqlite3 "$TEST_DIR/storage/dropbox.db" "SELECT username, quota_used, quota_limit FROM users WHERE username='$TEST_USER';" 2>/dev/null)
+    if [ -n "$DB_CHECK" ]; then
+        # Verify quota values are present (non-empty)
+        if echo "$DB_CHECK" | grep -q "$TEST_USER"; then
+            pass_test "Quota tracking active in SQLite database"
+        else
+            fail_test "Quota fields missing from database"
+        fi
     else
-        fail_test "Quota fields missing from user metadata"
+        fail_test "User not found in database"
     fi
 else
-    fail_test "User metadata file not found"
+    fail_test "SQLite database file not found"
 fi
 
 # Manual quota test can be done with: ./test_client.sh (uploads 100MB+ file)

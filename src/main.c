@@ -84,22 +84,22 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    /* Initialize user database */
-    if (user_database_init(&global_user_db, 256) != 0)
+    /* Initialize user metadata system with SQLite database */
+    if (user_metadata_init("storage/dropbox.db") != 0)
     {
-        fprintf(stderr, "User database initialization failed\n");
+        fprintf(stderr, "User metadata initialization failed\n");
         session_manager_destroy(&session_manager);
         client_queue_destroy(&client_queue);
         task_queue_destroy(&task_queue);
         return 1;
     }
-    printf("User database initialized\n");
+    printf("User metadata system initialized\n");
 
     /* Initialize file lock manager (Phase 2.5) */
     if (file_lock_manager_init(&global_file_lock_manager, MAX_FILE_LOCKS) != 0)
     {
         fprintf(stderr, "File lock manager initialization failed\n");
-        user_database_destroy(&global_user_db);
+        user_metadata_cleanup();
         session_manager_destroy(&session_manager);
         client_queue_destroy(&client_queue);
         task_queue_destroy(&task_queue);
@@ -139,7 +139,7 @@ int main(int argc, char *argv[])
         fprintf(stderr, "[Main] Failed to bind to port %s\n", port);
         perror("bind");
         file_lock_manager_destroy(&global_file_lock_manager);
-        user_database_destroy(&global_user_db);
+        user_metadata_cleanup();
         session_manager_destroy(&session_manager);
         client_queue_destroy(&client_queue);
         task_queue_destroy(&task_queue);
@@ -152,7 +152,7 @@ int main(int argc, char *argv[])
         perror("listen");
         close(listen_fd);
         file_lock_manager_destroy(&global_file_lock_manager);
-        user_database_destroy(&global_user_db);
+        user_metadata_cleanup();
         session_manager_destroy(&session_manager);
         client_queue_destroy(&client_queue);
         task_queue_destroy(&task_queue);
@@ -279,8 +279,8 @@ int main(int argc, char *argv[])
     printf("[Main]   Destroying task queue...\n");
     task_queue_destroy(&task_queue);
 
-    printf("[Main]   Destroying user database...\n");
-    user_database_destroy(&global_user_db);
+    printf("[Main]   Cleaning up user metadata system...\n");
+    user_metadata_cleanup();
 
     printf("[Main] ========================================\n");
     printf("[Main] SERVER SHUTDOWN COMPLETE\n");
