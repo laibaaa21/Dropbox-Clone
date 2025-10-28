@@ -1,8 +1,22 @@
+# Local documentation (not for submission)
 Local_Docs/
+
+# Compiled binaries
 server
+server-tsan
 dbc_client
+
+# Object files
 *.o
+*.tsan.o
 src/**/*.o
+src/**/*.tsan.o
 client/*.o
+
+# Test results and logs
+test_results/
+*.log
+
+# User storage data
 storage/*
 !storage/.gitkeep

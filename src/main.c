@@ -264,6 +264,12 @@ int main(int argc, char *argv[])
     printf("[Main]   Destroying file lock manager...\n");
     file_lock_manager_destroy(&global_file_lock_manager);
 
+    /* Print final statistics (Phase 2.9) - BEFORE destroying session manager */
+    uint64_t total_created, peak_count;
+    session_get_statistics(&session_manager, NULL, &total_created, &peak_count);
+    printf("[Main] Session statistics: %lu total created, %lu peak concurrent\n",
+           total_created, peak_count);
+
     printf("[Main]   Destroying session manager...\n");
     session_manager_destroy(&session_manager);
 
@@ -275,12 +281,6 @@ int main(int argc, char *argv[])
 
     printf("[Main]   Destroying user database...\n");
     user_database_destroy(&global_user_db);
-
-    /* Print final statistics (Phase 2.9) */
-    uint64_t total_created, peak_count;
-    session_get_statistics(&session_manager, NULL, &total_created, &peak_count);
-    printf("[Main] Session statistics: %lu total created, %lu peak concurrent\n",
-           total_created, peak_count);
 
     printf("[Main] ========================================\n");
     printf("[Main] SERVER SHUTDOWN COMPLETE\n");

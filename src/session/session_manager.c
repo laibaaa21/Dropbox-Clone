@@ -164,10 +164,14 @@ uint64_t session_create(SessionManager *mgr, int socket_fd)
         mgr->peak_session_count = mgr->active_session_count;
     }
 
+    /* Read statistics before unlocking (to avoid data race) */
+    uint64_t active_count = mgr->active_session_count;
+    uint64_t peak_count = mgr->peak_session_count;
+
     pthread_mutex_unlock(&mgr->manager_mtx);
 
     printf("[SessionManager] Created session %lu (fd=%d, slot=%u, active=%lu/%lu peak)\n",
-           session_id, socket_fd, index, mgr->active_session_count, mgr->peak_session_count);
+           session_id, socket_fd, index, active_count, peak_count);
 
     return session_id;
 }
