@@ -37,22 +37,7 @@ static void restore_terminal_echo(struct termios *old_term)
 /* Clear any buffered input from stdin */
 static void clear_input_buffer(void)
 {
-    int c;
-    /* Set stdin to non-blocking temporarily */
-    struct termios old_term, new_term;
-    tcgetattr(STDIN_FILENO, &old_term);
-    new_term = old_term;
-    new_term.c_cc[VMIN] = 0;  /* Non-blocking read */
-    new_term.c_cc[VTIME] = 0; /* No timeout */
-    tcsetattr(STDIN_FILENO, TCSANOW, &new_term);
-
-    /* Read and discard all pending input */
-    while ((c = getchar()) != EOF);
-
-    /* Restore original settings */
-    tcsetattr(STDIN_FILENO, TCSANOW, &old_term);
-
-    /* Clear EOF flag */
+    /* Simply clear the error indicators */
     clearerr(stdin);
 }
 
