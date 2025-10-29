@@ -1,8 +1,8 @@
-# Multi-threaded File Storage Server (StashCLI)
+<h1 align="center">StashCLI: Multi-threaded File Storage Server</h1>
 
 ---
 
-## 0. Group Members
+### 0. Group Members
 
 | Name | Roll Number |
 |------|-------------|
@@ -12,7 +12,7 @@
 
 ---
 
-## 1. GitHub Repository Link
+### 1. GitHub Repository Link
 
 **Repository:** [https://github.com/laibaaa21/StashCLI](https://github.com/laibaaa21/StashCLI)
 
@@ -34,11 +34,11 @@ StashCLI/
 
 ---
 
-## 2. Design Report
+### 2. Design Report
 
 The complete design is documented across two phases:
 
-### Phase 1 Design Report
+#### Phase 1 Design Report
 
 **Location:** `docs/phase1_report.md`
 
@@ -66,7 +66,7 @@ See `docs/phase1_report.md` for complete details.
 
 ---
 
-### Phase 2 Design Report
+#### Phase 2 Design Report
 
 **Location:** `docs/phase2_report.md`
 
@@ -115,11 +115,11 @@ See `docs/phase2_report.md` for complete analysis.
 
 ---
 
-## 3. Worker→Client Communication Mechanism
+### 3. Worker→Client Communication Mechanism
 
 **Chosen Approach:** **Session-based Response Delivery with Condition Variables**
 
-### Implementation
+#### Implementation
 
 Each client connection creates a Session containing:
 ```c
@@ -140,7 +140,7 @@ typedef struct Response {
 } Response;
 ```
 
-### Flow
+#### Flow
 
 1. **Client thread** queues Task with `session_id`, then calls `response_wait(&session->response)` which blocks on CV
 2. **Worker thread** completes operation, calls `deliver_response(session_id, ...)` which:
@@ -148,28 +148,28 @@ typedef struct Response {
    - Sets response data and signals CV: `pthread_cond_signal(&session->response.cv)`
 3. **Client thread** wakes from CV, reads response, sends to socket
 
-### Justification
+#### Justification
 
 **Architecture Compliance:** Only client threads write to sockets (requirement)
 **No Busy-Waiting:** Uses `pthread_cond_wait()` (Bonus 1)
 **Low Latency:** Direct CV signaling, O(1) session lookup
 **Safe Disconnects:** `is_active` flag prevents use-after-free
 
-**Alternatives Rejected:**
+#### Alternatives Rejected:
 - Option B (Worker writes to socket): Violates architecture requirement
 - Option C (Result broker thread): Extra queue overhead
 - Option D (Async fetch): Extra round-trip complexity
 
-**Code References:**
+#### Code References:
 - Client wait: `src/session/response_queue.c:68-81` (`response_wait()`)
 - Worker signal: `src/session/response_queue.c:45-66` (`response_set()`)
 - Session lookup: `src/session/session_manager.c:179-222` (`session_get()`)
 
 ---
 
-## 4. TSAN and Valgrind Reports
+### 4. TSAN and Valgrind Reports
 
-### 4.1 ThreadSanitizer (TSAN) Report
+#### 4.1 ThreadSanitizer (TSAN) Report
 
 **Purpose:** Detect data races in concurrent code
 
@@ -224,7 +224,7 @@ All shared data is properly synchronized.
 
 ---
 
-### 4.2 Valgrind Memory Leak Report
+#### 4.2 Valgrind Memory Leak Report
 
 **Purpose:** Detect memory leaks and invalid memory access
 
@@ -284,9 +284,9 @@ valgrind --leak-check=full --show-leak-kinds=all ./server
 
 ---
 
-## 5. Additional Testing Evidence
+### 5. Additional Testing Evidence
 
-### Functional Test Results
+#### Functional Test Results
 
 **Phase 1 Tests (11 scenarios):**
 ```bash
@@ -325,16 +325,16 @@ All scenarios passing:
 
 ---
 
-## 6. Key Implementation Highlights
+### 6. Key Implementation Highlights
 
-### Bonus Features Completed
+#### Bonus Features Completed
 
  **Bonus 1: No Busy-Waiting**
 - Client threads use `pthread_cond_wait()` instead of polling
 - Workers signal completion via `pthread_cond_signal()`
 - Implemented in `src/session/response_queue.c`
 
-### Synchronization Primitives Used
+#### Synchronization Primitives Used
 
 | Component | Mutex | Condition Variables |
 |-----------|-------|-------------------|
@@ -347,7 +347,7 @@ All scenarios passing:
 | FileLockManager | `manager_mtx` | - |
 | FileLock | `file_mtx` | - |
 
-### Scalability Configuration
+#### Scalability Configuration
 
 | Parameter | Value | Configurable In |
 |-----------|-------|----------------|
@@ -361,21 +361,21 @@ All scenarios passing:
 
 ---
 
-## 7. How to Build and Test (Quick Reference)
+### 7. How to Build and Test (Quick Reference)
 
-### Build
+#### Build
 ```bash
 make              # Build server and client
 make server-tsan  # Build TSAN-enabled server
 ```
 
-### Run
+#### Run
 ```bash
 ./server          # Start server on port 10985
 ./stashcli        # Start client (in another terminal)
 ```
 
-### Test
+#### Test
 ```bash
 # Functional tests
 ./tests/test_phase1.sh
@@ -386,14 +386,14 @@ make server-tsan  # Build TSAN-enabled server
 ./tests/demo_valgrind.sh  # Valgrind verification
 ```
 
-### Expected Output
+#### Expected Output
 - All test scripts should print: `All tests passed`
 - TSAN: `NO DATA RACES DETECTED`
 - Valgrind: `All heap blocks were freed -- no leaks are possible`
 
 ---
 
-## 8. Design Document References
+### 8. Design Document References
 
 | Document | Location | Description |
 |----------|----------|-------------|
@@ -405,7 +405,7 @@ make server-tsan  # Build TSAN-enabled server
 
 ---
 
-## 9. Summary
+### 9. Summary
 
 The StashCLI server implementation successfully demonstrates:
 
