@@ -37,7 +37,28 @@ static void restore_terminal_echo(struct termios *old_term)
 /* Clear any buffered input from stdin */
 static void clear_input_buffer(void)
 {
-    /* Simply clear the error indicators */
+    /* Clear error indicators */
+    clearerr(stdin);
+
+    /* Set stdin to non-blocking mode temporarily */
+    struct termios old_term, new_term;
+    tcgetattr(STDIN_FILENO, &old_term);
+    new_term = old_term;
+    new_term.c_lflag &= ~ICANON;  /* Disable canonical mode */
+    new_term.c_cc[VMIN] = 0;       /* Non-blocking reads */
+    new_term.c_cc[VTIME] = 0;      /* No timeout */
+    tcsetattr(STDIN_FILENO, TCSANOW, &new_term);
+
+    /* Drain any pending input */
+    int c;
+    while ((c = getchar()) != EOF) {
+        /* Discard character */
+    }
+
+    /* Restore terminal settings */
+    tcsetattr(STDIN_FILENO, TCSANOW, &old_term);
+
+    /* Clear error indicators again */
     clearerr(stdin);
 }
 
@@ -376,18 +397,24 @@ void ui_show_upload_progress(size_t current, size_t total)
 
 void ui_show_upload_result(bool success, const char *message, size_t bytes_sent)
 {
+    /* Move up to overwrite the progress line, then clear it */
+    tui_cursor_up(1);
+    tui_clear_line();
+    printf("\r"); /* Move cursor to beginning of line */
+
     char size_str[32];
     tui_format_bytes(bytes_sent, size_str, sizeof(size_str));
 
     if (success) {
         tui_print_status(TUI_STATUS_SUCCESS, "Upload complete (%s)", size_str);
-        if (message && strlen(message) > 0) {
-            tui_print_color(TUI_COLOR_BRIGHT_BLACK, "  Server: %s", message);
-        }
     } else {
         tui_print_status(TUI_STATUS_ERROR, "Upload failed: %s", message);
     }
     printf("\n");
+    fflush(stdout);
+
+    /* Clear stdin buffer to ensure clean state */
+    clear_input_buffer();
 }
 
 void ui_show_download_start(const char *filename)
@@ -425,18 +452,24 @@ void ui_show_download_progress(size_t current, size_t total)
 
 void ui_show_download_result(bool success, const char *message, size_t bytes_received)
 {
+    /* Move up to overwrite the progress line, then clear it */
+    tui_cursor_up(1);
+    tui_clear_line();
+    printf("\r"); /* Move cursor to beginning of line */
+
     char size_str[32];
     tui_format_bytes(bytes_received, size_str, sizeof(size_str));
 
     if (success) {
         tui_print_status(TUI_STATUS_SUCCESS, "Download complete (%s)", size_str);
-        if (message && strlen(message) > 0) {
-            tui_print_color(TUI_COLOR_BRIGHT_BLACK, "  Server: %s", message);
-        }
     } else {
         tui_print_status(TUI_STATUS_ERROR, "Download failed: %s", message);
     }
     printf("\n");
+    fflush(stdout);
+
+    /* Clear stdin buffer to ensure clean state */
+    clear_input_buffer();
 }
 
 void ui_show_delete_result(bool success, const char *filename, const char *message)
