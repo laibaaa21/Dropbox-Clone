@@ -12,7 +12,29 @@
 
 ---
 
-## 1. Design Report
+## 1. GitHub Repository Link
+
+**Repository:** [https://github.com/laibaaa21/StashCLI](https://github.com/laibaaa21/StashCLI)
+
+**Important Notes:**
+- Repository contains complete source code
+- Makefile included for build
+- README.md contains run and test instructions
+
+**Repository Structure:**
+```
+StashCLI/
+├── Makefile              ✓ Build system
+├── README.md             ✓ Run and test instructions
+├── src/                  ✓ Source code
+├── client/               ✓ Test client
+├── tests/                ✓ Test scripts
+└── docs/                 ✓ Design reports
+```
+
+---
+
+## 2. Design Report
 
 The complete design is documented across two phases:
 
@@ -93,7 +115,7 @@ See `docs/phase2_report.md` for complete analysis.
 
 ---
 
-## 2. Worker→Client Communication Mechanism
+## 3. Worker→Client Communication Mechanism
 
 **Chosen Approach:** **Session-based Response Delivery with Condition Variables**
 
@@ -128,10 +150,10 @@ typedef struct Response {
 
 ### Justification
 
-✅ **Architecture Compliance:** Only client threads write to sockets (requirement)
-✅ **No Busy-Waiting:** Uses `pthread_cond_wait()` (Bonus 1)
-✅ **Low Latency:** Direct CV signaling, O(1) session lookup
-✅ **Safe Disconnects:** `is_active` flag prevents use-after-free
+**Architecture Compliance:** Only client threads write to sockets (requirement)
+**No Busy-Waiting:** Uses `pthread_cond_wait()` (Bonus 1)
+**Low Latency:** Direct CV signaling, O(1) session lookup
+**Safe Disconnects:** `is_active` flag prevents use-after-free
 
 **Alternatives Rejected:**
 - Option B (Worker writes to socket): Violates architecture requirement
@@ -142,28 +164,6 @@ typedef struct Response {
 - Client wait: `src/session/response_queue.c:68-81` (`response_wait()`)
 - Worker signal: `src/session/response_queue.c:45-66` (`response_set()`)
 - Session lookup: `src/session/session_manager.c:179-222` (`session_get()`)
-
----
-
-## 3. GitHub Repository Link
-
-**Repository:** `https://github.com/laibaaa21/StashCLI`
-
-**Important Notes:**
-- Repository contains complete source code
-- Makefile included for build
-- README.md contains run and test instructions
-
-**Repository Structure:**
-```
-StashCLI/
-├── Makefile              ✓ Build system
-├── README.md             ✓ Run and test instructions
-├── src/                  ✓ Source code
-├── client/               ✓ Test client
-├── tests/                ✓ Test scripts
-└── docs/                 ✓ Design reports
-```
 
 ---
 
@@ -204,9 +204,9 @@ All shared data is properly synchronized.
 ```
 
 **Summary:**
-- ✅ **Data Races Detected:** 0
-- ✅ **Tests Passed:** 19/19
-- ✅ **Status:** PASS
+- **Data Races Detected:** 0
+- **Tests Passed:** 19/19
+- **Status:** PASS
 
 **Verified Race-Free Components:**
 - ClientQueue (mutex + CV synchronization)
@@ -260,11 +260,11 @@ valgrind --leak-check=full --show-leak-kinds=all ./server
 ```
 
 **Summary:**
-- ✅ **Memory Leaks:** 0 bytes in 0 blocks
-- ✅ **Allocations:** 4,420
-- ✅ **Frees:** 4,420 (perfect balance)
-- ✅ **Memory Errors:** 0
-- ✅ **Status:** PASS
+- **Memory Leaks:** 0 bytes in 0 blocks
+- **Allocations:** 4,420
+- **Frees:** 4,420 (perfect balance)
+- **Memory Errors:** 0
+- **Status:** PASS
 
 **Resources Properly Freed:**
 - Session structures and embedded responses
@@ -294,17 +294,17 @@ valgrind --leak-check=full --show-leak-kinds=all ./server
 ```
 
 All tests passing:
-1. ✅ Server startup
-2. ✅ User signup
-3. ✅ User login (correct password)
-4. ✅ Login rejection (wrong password)
-5. ✅ File upload
-6. ✅ File listing
-7. ✅ File download
-8. ✅ File integrity verification (MD5 checksum)
-9. ✅ File deletion
-10. ✅ List after delete
-11. ✅ Quota enforcement
+1. Server startup
+2. User signup
+3. User login (correct password)
+4. Login rejection (wrong password)
+5. File upload
+6. File listing
+7. File download
+8. File integrity verification (MD5 checksum)
+9. File deletion
+10. List after delete
+11. Quota enforcement
 
 **Phase 2 Concurrency Tests (8 scenarios):**
 ```bash
@@ -312,14 +312,14 @@ All tests passing:
 ```
 
 All scenarios passing:
-1. ✅ Multiple users signup concurrently (5 users)
-2. ✅ Multiple users login concurrently (5 users)
-3. ✅ Same user with multiple concurrent sessions (3 sessions)
-4. ✅ Different users perform operations concurrently (3 users)
-5. ✅ Same user performs concurrent file operations (3 concurrent LIST)
-6. ✅ Mixed operations under load (10 clients)
-7. ✅ Stress test (20 concurrent clients)
-8. ✅ Graceful shutdown with active connections
+1. Multiple users signup concurrently (5 users)
+2. Multiple users login concurrently (5 users)
+3. Same user with multiple concurrent sessions (3 sessions)
+4. Different users perform operations concurrently (3 users)
+5. Same user performs concurrent file operations (3 concurrent LIST)
+6. Mixed operations under load (10 clients)
+7. Stress test (20 concurrent clients)
+8. Graceful shutdown with active connections
 
 **Total:** 19/19 tests passing
 
@@ -329,7 +329,7 @@ All scenarios passing:
 
 ### Bonus Features Completed
 
-✅ **Bonus 1: No Busy-Waiting**
+ **Bonus 1: No Busy-Waiting**
 - Client threads use `pthread_cond_wait()` instead of polling
 - Workers signal completion via `pthread_cond_signal()`
 - Implemented in `src/session/response_queue.c`
@@ -405,36 +405,9 @@ make server-tsan  # Build TSAN-enabled server
 
 ---
 
-## 9. Compliance Checklist
+## 9. Summary
 
-### Phase 1 Acceptance Criteria
-- ✅ Single client session performs all operations successfully
-- ✅ Code builds with `make`
-- ✅ README with run instructions
-- ✅ Valgrind shows no obvious leaks
-
-### Phase 2 Acceptance Criteria
-- ✅ Correct behavior under concurrent load (automated tests)
-- ✅ ThreadSanitizer reports no data races
-- ✅ Valgrind shows no memory leaks
-- ✅ Worker→client delivery reliably delivers responses
-- ✅ Clean shutdown with no resource leaks
-
-### Deliverables
-- ✅ Source code + Makefile
-- ✅ Simple client program
-- ✅ Phase 1 report (≤1 page)
-- ✅ Phase 2 report (1-2 pages)
-- ✅ Concurrency test scripts
-- ✅ Demo scripts (TSAN/Valgrind)
-- ✅ README with build/run/test instructions
-- ✅ Git repository
-
----
-
-## 10. Submission Summary
-
-This implementation successfully demonstrates:
+The StashCLI server implementation successfully demonstrates:
 
 1. **Three-layer thread architecture** with proper separation of concerns
 2. **Thread-safe queue operations** using mutex + condition variables
