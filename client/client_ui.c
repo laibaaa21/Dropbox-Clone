@@ -195,12 +195,60 @@ bool ui_prompt_username(char *username, size_t bufsize)
 
 bool ui_prompt_password(char *password, size_t bufsize)
 {
+    struct termios old_term;
+    int c;
+    size_t pos = 0;
+
     tui_print_color(TUI_COLOR_CYAN, "Password: ");
+    fflush(stdout);
 
-    if (fgets(password, bufsize, stdin) == NULL)
-        return false;
+    /* Disable echo */
+    disable_terminal_echo(&old_term);
 
-    password[strcspn(password, "\n")] = 0;
+    /* Read password character by character */
+    while (pos < bufsize - 1)
+    {
+        c = getchar();
+
+        /* Handle Enter key - finish input */
+        if (c == '\n' || c == '\r')
+        {
+            break;
+        }
+        /* Handle Backspace/Delete */
+        else if (c == 127 || c == 8)
+        {
+            if (pos > 0)
+            {
+                pos--;
+                /* Erase asterisk from screen */
+                printf("\b \b");
+                fflush(stdout);
+            }
+        }
+        /* Handle Ctrl+C or EOF */
+        else if (c == 3 || c == EOF)
+        {
+            restore_terminal_echo(&old_term);
+            printf("\n");
+            return false;
+        }
+        /* Regular character */
+        else if (c >= 32 && c <= 126)
+        {
+            password[pos++] = (char)c;
+            /* Display asterisk */
+            printf("*");
+            fflush(stdout);
+        }
+    }
+
+    password[pos] = '\0';
+    printf("\n");
+
+    /* Restore terminal settings */
+    restore_terminal_echo(&old_term);
+
     return true;
 }
 
