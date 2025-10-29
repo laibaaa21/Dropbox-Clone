@@ -34,6 +34,28 @@ static void restore_terminal_echo(struct termios *old_term)
     tcsetattr(STDIN_FILENO, TCSANOW, old_term);
 }
 
+/* Clear any buffered input from stdin */
+static void clear_input_buffer(void)
+{
+    int c;
+    /* Set stdin to non-blocking temporarily */
+    struct termios old_term, new_term;
+    tcgetattr(STDIN_FILENO, &old_term);
+    new_term = old_term;
+    new_term.c_cc[VMIN] = 0;  /* Non-blocking read */
+    new_term.c_cc[VTIME] = 0; /* No timeout */
+    tcsetattr(STDIN_FILENO, TCSANOW, &new_term);
+
+    /* Read and discard all pending input */
+    while ((c = getchar()) != EOF);
+
+    /* Restore original settings */
+    tcsetattr(STDIN_FILENO, TCSANOW, &old_term);
+
+    /* Clear EOF flag */
+    clearerr(stdin);
+}
+
 /* ============================================================================
  * Startup & Connection
  * ============================================================================ */
@@ -107,6 +129,9 @@ void ui_show_splash_screen(void)
     disable_terminal_echo(&old_term);
     getchar();
     restore_terminal_echo(&old_term);
+
+    /* Clear any remaining input from buffer */
+    clear_input_buffer();
 
     /* Clear screen after key press */
     printf(TUI_CLEAR_SCREEN TUI_CURSOR_HOME);
@@ -231,6 +256,9 @@ bool ui_prompt_password(char *password, size_t bufsize)
         {
             restore_terminal_echo(&old_term);
             printf("\n");
+            /* Clear any pending input */
+            while (getchar() != '\n' && !feof(stdin));
+            clearerr(stdin);
             return false;
         }
         /* Regular character */
@@ -248,6 +276,9 @@ bool ui_prompt_password(char *password, size_t bufsize)
 
     /* Restore terminal settings */
     restore_terminal_echo(&old_term);
+
+    /* Clear any remaining buffered input */
+    clear_input_buffer();
 
     return true;
 }
