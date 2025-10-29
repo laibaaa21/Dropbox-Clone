@@ -119,7 +119,7 @@ typedef struct Response {
 - No plaintext passwords stored
 
 **User Database:**
-- SQLite database: `storage/dropbox.db`
+- SQLite database: `storage/stash.db`
 - Users table: username (unique), password_hash, quota_used, quota_limit
 - Files table: user_id, filename (unique per user), size, timestamp
 - Thread-safe: all database access protected by `db_mutex`

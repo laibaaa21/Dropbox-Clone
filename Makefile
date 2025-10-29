@@ -28,7 +28,7 @@ TSAN_CFLAGS = -Wall -Wextra -pthread -g -O1 -fsanitize=thread
 # Client source files
 CLIENT_SRCS = client/client.c client/client_ui.c client/tui.c
 CLIENT_OBJS = $(CLIENT_SRCS:.c=.o)
-CLIENT_TARGET = dbc_client
+CLIENT_TARGET = stashcli
 CLIENT_INCLUDES = -Iclient
 
 # Targets
@@ -79,7 +79,7 @@ distclean: clean clean-storage
 
 # Help
 help:
-	@echo "Dropbox Clone - Makefile targets:"
+	@echo "StashCLI - Makefile targets:"
 	@echo "  make all          - Build server and client"
 	@echo "  make server       - Build server only"
 	@echo "  make client       - Build client only"

@@ -51,7 +51,7 @@ void *client_worker(void *arg)
 
         /* Send welcome message */
         const char *welcome_msg =
-            "Welcome to Dropbox Clone Server :))\n"
+            "Welcome to StashCLI Server :))\n"
             "Please authenticate first:\n"
             "SIGNUP <username> <password>\n"
             "LOGIN <username> <password>\n";

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ================================================================
-# Dropbox Clone - Phase 1 Acceptance Test Suite
+# StashCLI - Phase 1 Acceptance Test Suite
 # ================================================================
 # Tests all Phase 1 requirements according to specification
 #
@@ -27,8 +27,8 @@ HOST="localhost"
 PORT="10985"
 TEST_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 SERVER_BIN="$TEST_DIR/server"
-CLIENT_BIN="$TEST_DIR/dbc_client"
-TEMP_DIR="/tmp/dbc_test_$$"
+CLIENT_BIN="$TEST_DIR/stashcli"
+TEMP_DIR="/tmp/stash_test_$$"
 
 # Test counters
 TESTS_RUN=0
@@ -393,9 +393,9 @@ else
 fi
 
 # Verify quota metadata is tracked (now in SQLite database)
-if [ -f "$TEST_DIR/storage/dropbox.db" ]; then
+if [ -f "$TEST_DIR/storage/stash.db" ]; then
     # Check if user exists in database with quota fields
-    DB_CHECK=$(sqlite3 "$TEST_DIR/storage/dropbox.db" "SELECT username, quota_used, quota_limit FROM users WHERE username='$TEST_USER';" 2>/dev/null)
+    DB_CHECK=$(sqlite3 "$TEST_DIR/storage/stash.db" "SELECT username, quota_used, quota_limit FROM users WHERE username='$TEST_USER';" 2>/dev/null)
     if [ -n "$DB_CHECK" ]; then
         # Verify quota values are present (non-empty)
         if echo "$DB_CHECK" | grep -q "$TEST_USER"; then

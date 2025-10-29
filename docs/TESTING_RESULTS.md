@@ -1,6 +1,6 @@
 # Testing Results Report
 
-**Project:** Dropbox Clone - Multi-threaded File Storage Server
+**Project:** StashCLI - Multi-threaded File Storage Server
 **Date:** October 28, 2025
 **Testing Phase:** Phase 2 Verification (TSAN & Valgrind)
 **Status:** ✅ **ALL TESTS PASSED** (Re-verified)
@@ -9,7 +9,7 @@
 
 ## Executive Summary
 
-This document presents the results of comprehensive concurrency and memory safety testing conducted on the Dropbox Clone server implementation. The project successfully passes all required Phase 2 acceptance criteria:
+This document presents the results of comprehensive concurrency and memory safety testing conducted on the StashCLI server implementation. The project successfully passes all required Phase 2 acceptance criteria:
 
 - ✅ **ThreadSanitizer (TSAN)**: Zero data races detected
 - ✅ **Valgrind**: Zero memory leaks detected (4,420 allocations perfectly balanced with 4,420 frees)
@@ -407,7 +407,7 @@ None during testing with 20 clients. Potential bottlenecks at scale:
 
 ### 10.1 Overall Assessment
 
-The Dropbox Clone server implementation successfully meets all Phase 2 requirements:
+The StashCLI server implementation successfully meets all Phase 2 requirements:
 
 1. **Correctness:** All functional tests pass
 2. **Concurrency Safety:** Zero data races (TSAN verified)
@@ -462,7 +462,7 @@ While the current implementation passes all requirements, potential enhancements
 
 ### 12.1 Migration Overview
 
-The user metadata storage system was migrated from file-based text storage (`storage/<username>/metadata.txt`) to a professional SQLite database (`storage/dropbox.db`).
+The user metadata storage system was migrated from file-based text storage (`storage/<username>/metadata.txt`) to a professional SQLite database (`storage/stash.db`).
 
 ### 12.2 Architecture Changes
 
@@ -570,7 +570,7 @@ Phase 2 Tests:   6/6  PASSED ✓
 
 **Breaking Changes:**
 - Old `metadata.txt` files no longer used
-- Fresh database created at `storage/dropbox.db`
+- Fresh database created at `storage/stash.db`
 - No migration from old format (project scope is fresh implementation)
 
 **API Compatibility:**

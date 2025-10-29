@@ -7,7 +7,7 @@ Local_Scripts/
 # Compiled binaries
 server
 server-tsan
-dbc_client
+stashcli
 
 # Object files
 *.o

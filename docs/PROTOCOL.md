@@ -1,8 +1,8 @@
-# Dropbox Clone - Protocol Specification
+# StashCLI - Protocol Specification
 
 ## Overview
 
-The Dropbox Clone uses a text-based command protocol over TCP sockets. The server listens on port **10985** by default. All commands are newline-terminated (`\n`), and responses are sent as plain text with status messages.
+StashCLI uses a text-based command protocol over TCP sockets. The server listens on port **10985** by default. All commands are newline-terminated (`\n`), and responses are sent as plain text with status messages.
 
 ## Connection Flow
 
@@ -23,7 +23,7 @@ The Dropbox Clone uses a text-based command protocol over TCP sockets. The serve
 When a client connects, the server immediately sends:
 
 ```
-Welcome to Dropbox Clone Server :))
+Welcome to StashCLI Server :))
 Please authenticate first:
 SIGNUP <username> <password>
 LOGIN <username> <password>

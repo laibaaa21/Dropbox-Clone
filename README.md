@@ -1,4 +1,4 @@
-# Dropbox Clone - Multi-threaded File Storage Server
+# StashCLI - Multi-threaded File Storage Server
 
 A multi-threaded file storage server implementing user authentication, per-user quotas, and concurrent file operations using a three-layer thread architecture.
 
@@ -36,7 +36,7 @@ make
 make server
 
 # Build client only
-make dbc_client
+make stashcli
 
 # Build TSAN-enabled server (for testing)
 make server-tsan
@@ -63,10 +63,10 @@ make clean
 
 ```bash
 # Connect to localhost:10985
-./dbc_client
+./stashcli
 
 # Connect to custom host/port
-./dbc_client <host> <port>
+./stashcli <host> <port>
 ```
 
 ---
@@ -175,7 +175,7 @@ See `docs/PROTOCOL.md` for detailed specification.
 ## Project Structure
 
 ```
-Dropbox-Clone/
+StashCLI/
 ├── Makefile                   # Build configuration
 ├── README.md                  # This file
 ├── client/
@@ -201,7 +201,7 @@ Dropbox-Clone/
 │   └── utils/
 │       └── network_utils.c    # Socket I/O helpers
 ├── storage/
-│   ├── dropbox.db             # SQLite database
+│   ├── stash.db               # SQLite database
 │   └── <username>/            # User file directories
 ├── tests/
 │   ├── test_phase1.sh         # Phase 1 acceptance tests

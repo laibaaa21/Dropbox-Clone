@@ -1,4 +1,4 @@
-# Multi-threaded File Storage Server (Dropbox Clone)
+# Multi-threaded File Storage Server (StashCLI)
 
 ---
 
@@ -147,7 +147,7 @@ typedef struct Response {
 
 ## 3. GitHub Repository Link
 
-**Repository:** `https://github.com/laibaaa21/Dropbox-Clone`
+**Repository:** `https://github.com/laibaaa21/StashCLI`
 
 **Important Notes:**
 - Repository contains complete source code
@@ -156,7 +156,7 @@ typedef struct Response {
 
 **Repository Structure:**
 ```
-Dropbox-Clone/
+StashCLI/
 ├── Makefile              ✓ Build system
 ├── README.md             ✓ Run and test instructions
 ├── src/                  ✓ Source code
@@ -372,7 +372,7 @@ make server-tsan  # Build TSAN-enabled server
 ### Run
 ```bash
 ./server          # Start server on port 10985
-./dbc_client      # Start client (in another terminal)
+./stashcli        # Start client (in another terminal)
 ```
 
 ### Test

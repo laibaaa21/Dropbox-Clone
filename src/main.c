@@ -85,7 +85,7 @@ int main(int argc, char *argv[])
     }
 
     /* Initialize user metadata system with SQLite database */
-    if (user_metadata_init("storage/dropbox.db") != 0)
+    if (user_metadata_init("storage/stash.db") != 0)
     {
         fprintf(stderr, "User metadata initialization failed\n");
         session_manager_destroy(&session_manager);

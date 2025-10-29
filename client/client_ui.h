@@ -7,7 +7,7 @@
 /* ============================================================================
  * Client UI Layer - Presentation Logic
  * ============================================================================
- * This layer provides high-level UI functions specific to the Dropbox client,
+ * This layer provides high-level UI functions specific to the StashCLI client,
  * built on top of the generic TUI library.
  *
  * Separation of Concerns:
@@ -20,6 +20,12 @@
 /* ============================================================================
  * Startup & Connection
  * ============================================================================ */
+
+/**
+ * Display fancy ASCII art splash screen
+ * Waits for user to press any key before continuing
+ */
+void ui_show_splash_screen(void);
 
 /**
  * Display application banner/logo

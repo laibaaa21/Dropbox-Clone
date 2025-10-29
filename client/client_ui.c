@@ -4,17 +4,114 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
+#include <termios.h>
+#include <unistd.h>
 
 /* ============================================================================
  * Constants
  * ============================================================================ */
 
 #define BANNER_WIDTH 60
-#define PROMPT_PREFIX "dbc> "
+#define PROMPT_PREFIX "stash> "
+
+/* ============================================================================
+ * Terminal Input Control
+ * ============================================================================ */
+
+/* Disable terminal echo and canonical mode for single key press detection */
+static void disable_terminal_echo(struct termios *old_term)
+{
+    struct termios new_term;
+    tcgetattr(STDIN_FILENO, old_term);
+    new_term = *old_term;
+    new_term.c_lflag &= ~(ICANON | ECHO);
+    tcsetattr(STDIN_FILENO, TCSANOW, &new_term);
+}
+
+/* Restore terminal to original settings */
+static void restore_terminal_echo(struct termios *old_term)
+{
+    tcsetattr(STDIN_FILENO, TCSANOW, old_term);
+}
 
 /* ============================================================================
  * Startup & Connection
  * ============================================================================ */
+
+void ui_show_splash_screen(void)
+{
+    struct termios old_term;
+
+    /* Initialize TUI */
+    tui_init();
+
+    /* Clear screen and move cursor to home */
+    printf(TUI_CLEAR_SCREEN TUI_CURSOR_HOME);
+    fflush(stdout);
+
+    /* Calculate centering */
+    int term_width = tui_get_terminal_width();
+    int art_width = 70; /* Width of ASCII art */
+    int left_padding = (term_width - art_width) / 2;
+    if (left_padding < 0) left_padding = 0;
+
+    /* Print padding to center vertically */
+    printf("\n\n\n");
+
+    /* ASCII Art - Blocky style inspired by reference image */
+    const char *padding = "                    "; /* Adjust based on left_padding */
+
+    tui_print_styled(TUI_COLOR_CYAN, TUI_STYLE_BOLD,
+        "%s ██████╗ ████████╗ █████╗  ██████╗██╗  ██╗\n", padding);
+    tui_print_styled(TUI_COLOR_CYAN, TUI_STYLE_BOLD,
+        "%s██╔════╝ ╚══██╔══╝██╔══██╗██╔════╝██║  ██║\n", padding);
+    tui_print_styled(TUI_COLOR_CYAN, TUI_STYLE_BOLD,
+        "%s╚█████╗     ██║   ███████║╚█████╗ ███████║\n", padding);
+    tui_print_styled(TUI_COLOR_CYAN, TUI_STYLE_BOLD,
+        "%s ╚═══██╗    ██║   ██╔══██║ ╚═══██╗██╔══██║\n", padding);
+    tui_print_styled(TUI_COLOR_CYAN, TUI_STYLE_BOLD,
+        "%s██████╔╝    ██║   ██║  ██║██████╔╝██║  ██║\n", padding);
+    tui_print_styled(TUI_COLOR_CYAN, TUI_STYLE_BOLD,
+        "%s╚═════╝     ╚═╝   ╚═╝  ╚═╝╚═════╝ ╚═╝  ╚═╝\n", padding);
+
+    printf("\n");
+
+    tui_print_styled(TUI_COLOR_CYAN, TUI_STYLE_BOLD,
+        "%s      ██████╗██╗     ██╗\n", padding);
+    tui_print_styled(TUI_COLOR_CYAN, TUI_STYLE_BOLD,
+        "%s     ██╔════╝██║     ██║\n", padding);
+    tui_print_styled(TUI_COLOR_CYAN, TUI_STYLE_BOLD,
+        "%s     ██║     ██║     ██║\n", padding);
+    tui_print_styled(TUI_COLOR_CYAN, TUI_STYLE_BOLD,
+        "%s     ██║     ██║     ██║\n", padding);
+    tui_print_styled(TUI_COLOR_CYAN, TUI_STYLE_BOLD,
+        "%s     ╚██████╗███████╗██║\n", padding);
+    tui_print_styled(TUI_COLOR_CYAN, TUI_STYLE_BOLD,
+        "%s      ╚═════╝╚══════╝╚═╝\n", padding);
+
+    printf("\n\n");
+
+    /* Subtitle */
+    tui_print_styled(TUI_COLOR_BRIGHT_WHITE, TUI_STYLE_DIM,
+        "%s           Multi-threaded File Storage System\n", padding);
+
+    printf("\n\n");
+
+    /* Press any key message */
+    tui_print_styled(TUI_COLOR_YELLOW, TUI_STYLE_ITALIC,
+        "%s          Press any key to continue...\n", padding);
+
+    fflush(stdout);
+
+    /* Wait for single key press */
+    disable_terminal_echo(&old_term);
+    getchar();
+    restore_terminal_echo(&old_term);
+
+    /* Clear screen after key press */
+    printf(TUI_CLEAR_SCREEN TUI_CURSOR_HOME);
+    fflush(stdout);
+}
 
 void ui_show_banner(void)
 {
@@ -26,7 +123,7 @@ void ui_show_banner(void)
     tui_print_styled(TUI_COLOR_CYAN, TUI_STYLE_BOLD,
         "║                                                            ║\n");
     tui_print_styled(TUI_COLOR_CYAN, TUI_STYLE_BOLD,
-        "║              DROPBOX CLONE - FILE STORAGE                 ║\n");
+        "║                 STASHCLI - FILE STORAGE                    ║\n");
     tui_print_styled(TUI_COLOR_CYAN, TUI_STYLE_BOLD,
         "║                                                            ║\n");
     tui_print_styled(TUI_COLOR_CYAN, TUI_STYLE_BOLD,
@@ -422,6 +519,6 @@ void ui_show_session_end(void)
 void ui_show_goodbye(void)
 {
     printf("\n");
-    tui_print_styled(TUI_COLOR_CYAN, TUI_STYLE_BOLD, "   Thank you for using Dropbox Clone!\n");
+    tui_print_styled(TUI_COLOR_CYAN, TUI_STYLE_BOLD, "   Thank you for using StashCLI!\n");
     printf("\n");
 }

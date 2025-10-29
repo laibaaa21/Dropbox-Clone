@@ -3,7 +3,7 @@
 # Phase 2 Demo Script - Runs all concurrency tests
 
 echo "================================================================"
-echo "          Dropbox Clone - Phase 2 Demo Script"
+echo "          StashCLI - Phase 2 Demo Script"
 echo "================================================================"
 echo ""
 echo "This script demonstrates the Phase 2 implementation by running:"

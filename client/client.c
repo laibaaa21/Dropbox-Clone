@@ -11,7 +11,7 @@
 #define BUFFER_SIZE 8192
 #define CMD_BUFFER_SIZE 512
 
-/* Dropbox Clone Client - Interactive client with authentication support */
+/* StashCLI Client - Interactive client with authentication support */
 
 int connect_to_server(const char *host, const char *port)
 {
@@ -414,7 +414,7 @@ void interactive_session(int sockfd, const char *username)
 void print_usage(const char *progname)
 {
     fprintf(stderr, "Usage: %s <host> <port>\n", progname);
-    fprintf(stderr, "\nDropbox Clone Client - Interactive Mode\n");
+    fprintf(stderr, "\nStashCLI Client - Interactive Mode\n");
     fprintf(stderr, "\nExample:\n");
     fprintf(stderr, "  %s localhost 10985\n\n", progname);
 }
@@ -430,6 +430,9 @@ int main(int argc, char *argv[])
     const char *host = argv[1];
     const char *port = argv[2];
     char username[64] = {0};
+
+    /* Show fancy splash screen (clears on key press) */
+    ui_show_splash_screen();
 
     /* Show banner */
     ui_show_banner();

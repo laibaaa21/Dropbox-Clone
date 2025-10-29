@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ================================================================
-# Dropbox Clone - Phase 2 Concurrency Test Suite
+# StashCLI - Phase 2 Concurrency Test Suite
 # ================================================================
 # Tests all Phase 2 concurrency requirements:
 #
@@ -18,7 +18,7 @@ HOST="localhost"
 PORT="10985"
 TEST_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 SERVER_BIN="$TEST_DIR/server"
-CLIENT_BIN="$TEST_DIR/dbc_client"
+CLIENT_BIN="$TEST_DIR/stashcli"
 TEMP_DIR=$(mktemp -d)
 SERVER_PID=""
 
