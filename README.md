@@ -1,6 +1,12 @@
-# StashCLI - Multi-threaded File Storage Server
+<p align="center">
+  <img src="images/SplashScreenBanner.png" alt="StashCLI Banner" width="600">
+</p>
 
-A multi-threaded file storage server implementing user authentication, per-user quotas, and concurrent file operations using a three-layer thread architecture.
+<h1 align="center">StashCLI - Multi-threaded File Storage Server</h1>
+
+<p align="center">
+  A multi-threaded file storage server implementing user authentication, per-user quotas, and concurrent file operations using a three-layer thread architecture.
+</p>
 
 For detailed documentation and reports, see the `docs/` directory.
 
@@ -14,6 +20,58 @@ For detailed documentation and reports, see the `docs/` directory.
 - **Concurrency:** Handles multiple concurrent clients with per-file locking
 - **Thread-Safe:** Zero data races (ThreadSanitizer verified)
 - **Memory-Safe:** Zero memory leaks (Valgrind verified)
+
+---
+
+## User Interface
+
+StashCLI features a modern terminal user interface (TUI) with color-coded output, progress bars, and an intuitive command structure.
+
+### Authentication
+
+Upon connecting to the server, users are presented with an authentication menu to create a new account or sign in:
+
+![Authentication Menu](images/Auth.png)
+
+After selecting an option, users can enter their credentials securely (passwords are masked with asterisks):
+
+![Login Process](images/Login.png)
+
+### Available Commands
+
+Once authenticated, users can access various file operations. The `help` command displays all available commands:
+
+![Help Menu](images/Help-AvailableCommands.png)
+
+### File Upload
+
+Upload files with real-time progress tracking showing transfer speed and completion percentage:
+
+![File Upload](images/Upload.png)
+
+### File Download
+
+Download files from the server with visual progress indicators:
+
+![File Download](images/Download.png)
+
+### File Listing
+
+View all stored files with their sizes, total storage usage, and quota consumption displayed in an organized table format with a visual quota progress bar:
+
+![File List](images/List.png)
+
+### File Deletion
+
+Delete files with clear success/failure feedback:
+
+![File Deletion](images/Delete.png)
+
+### Multi-Session Support
+
+StashCLI supports concurrent connections, allowing multiple users to interact with the server simultaneously. Here's an example using Zellij terminal multiplexer:
+
+![Multiple Sessions](images/Zellij.png)
 
 ---
 
