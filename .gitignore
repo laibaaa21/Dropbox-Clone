@@ -1,6 +1,9 @@
 # Local documentation (not for submission)
 Local_Docs/
 
+# Local scripts (not for submission)
+Local_Scripts/
+
 # Compiled binaries
 server
 server-tsan
