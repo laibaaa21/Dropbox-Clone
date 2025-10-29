@@ -1,5 +1,4 @@
-# Final Submission Document
-**Multi-threaded File Storage Server (Dropbox Clone)**
+# Multi-threaded File Storage Server (Dropbox Clone)
 
 ---
 
