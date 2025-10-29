@@ -26,9 +26,10 @@ TSAN_TARGET = server-tsan
 TSAN_CFLAGS = -Wall -Wextra -pthread -g -O1 -fsanitize=thread
 
 # Client source files
-CLIENT_SRCS = client/client.c
+CLIENT_SRCS = client/client.c client/client_ui.c client/tui.c
 CLIENT_OBJS = $(CLIENT_SRCS:.c=.o)
 CLIENT_TARGET = dbc_client
+CLIENT_INCLUDES = -Iclient
 
 # Targets
 .PHONY: all clean run run-client test help server-tsan
@@ -40,6 +41,10 @@ $(SERVER_TARGET): $(SERVER_OBJS)
 
 $(CLIENT_TARGET): $(CLIENT_OBJS)
 	$(CC) $(CFLAGS) -o $@ $^
+
+# Client object files with client includes
+client/%.o: client/%.c
+	$(CC) $(CFLAGS) $(CLIENT_INCLUDES) -c $< -o $@
 
 # TSAN build target
 $(TSAN_TARGET): $(TSAN_OBJS)

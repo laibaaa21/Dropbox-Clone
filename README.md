@@ -1,200 +1,255 @@
-# Dropbox Clone
+# Dropbox Clone - Multi-threaded File Storage Server
 
-Multi-threaded client-server file storage system with upload, download, delete and list features
+A multi-threaded file storage server implementing user authentication, per-user quotas, and concurrent file operations using a three-layer thread architecture.
 
-## 📘 Project Overview
-
-This project implements a **Dropbox-like file storage server** using C, sockets and multithreading.  
-It allows clients to connect to the server and perform operations such as:
-
-- **SIGNUP / LOGIN** — Create or log into a user account
-- **UPLOAD** — Send a file to the server
-- **DOWNLOAD** — Retrieve a file from the server
-- **DELETE** — Remove a file from the server
-- **LIST** — View all uploaded files for a user
-
-The design follows a producer-consumer model using synchronized queues for efficient concurrent execution.
+For detailed documentation and reports, see the `docs/` directory.
 
 ---
 
-## ⚙️ How to Build and Run
+## Features
 
-### 🧩 Step 1 — Prerequisites
+- **User Authentication:** SIGNUP and LOGIN with SHA256 password hashing
+- **File Operations:** UPLOAD, DOWNLOAD, DELETE, LIST
+- **Per-User Quota:** 100MB storage limit per user
+- **Concurrency:** Handles multiple concurrent clients with per-file locking
+- **Thread-Safe:** Zero data races (ThreadSanitizer verified)
+- **Memory-Safe:** Zero memory leaks (Valgrind verified)
 
-Make sure your Ubuntu system has these installed:
+---
+
+## Build Instructions
+
+### Prerequisites
 
 ```bash
 sudo apt update
-sudo apt install build-essential netcat
+sudo apt install build-essential libsqlite3-dev libssl-dev
 ```
 
-### 🧩 Step 2 — Build the Project
+### Build
 
-Navigate to your project folder:
 ```bash
-cd ~/dropbox_clone
-```
-
-Build the server using the provided Makefile:
-```bash
+# Build server and client
 make
+
+# Build server only
+make server
+
+# Build client only
+make dbc_client
+
+# Build TSAN-enabled server (for testing)
+make server-tsan
+
+# Clean build artifacts
+make clean
 ```
-
-If successful, you'll see:
-```bash
-gcc -Wall -Wextra -pthread -o server server.c queue.c taskqueue.c storage.c
-```
-
-### 🧩 Step 3 — Run the Server
-
-Start the server:
-```bash
-make run
-```
-
-Expected output:
-```
-Server listening on port 12345
-```
-
-Keep this terminal open — it will display logs of client connections and file operations.
-
-![Server Terminal](images/terminal1.jpg)
-
-### 🧩 Step 4 — Run the Client (Testing)
-
-Open a second terminal for client commands using `nc` (netcat).
-Use the test commands below to interact with your server.
 
 ---
 
-## 🧪 Tests and Demonstrations
+## Run Instructions
 
-### 🧩 Test 1 — SIGNUP and LOGIN
-
-**Command:**
+### Start Server
 
 ```bash
-( printf "SIGNUP user1\n" ) | nc localhost 12345
-( printf "LOGIN user1\n" ) | nc localhost 12345
+# Default port 10985
+./server
+
+# Custom port
+./server 8080
 ```
 
-**Expected Output:**
+### Start Client
 
-```
-SIGNUP OK
-LOGIN OK
-```
+```bash
+# Connect to localhost:10985
+./dbc_client
 
-![SIGNUP and LOGIN](images/signup_login.jpg)
+# Connect to custom host/port
+./dbc_client <host> <port>
+```
 
 ---
 
-### 🧩 Test 2 — UPLOAD
+## Testing
 
-**Command:**
-
-```bash
-( printf "UPLOAD test.txt 11\nHello World" ) | nc localhost 12345
-```
-
-**Server Output Example:**
-
-```
-[ClientThread] Received: UPLOAD test.txt 11
-Hello World
-[ClientThread] Receiving 11 bytes for test.txt
-```
-
-**Verify file:**
+### Automated Test Suites
 
 ```bash
-cat storage/user1/test.txt
+# Phase 1 acceptance tests (11 tests)
+./tests/test_phase1.sh
+
+# Phase 2 concurrency tests (8 scenarios)
+./tests/test_phase2_concurrency.sh
+
+# Complete demo (functional tests)
+./tests/demo_phase2.sh
+
+# ThreadSanitizer verification
+./tests/demo_tsan.sh
+
+# Valgrind memory leak check
+./tests/demo_valgrind.sh
 ```
 
-![Upload Test](images/upload.jpg)
+### Manual Testing
+
+**ThreadSanitizer:**
+```bash
+make server-tsan
+./server-tsan
+# Run tests in another terminal, check stderr for warnings
+```
+
+**Valgrind:**
+```bash
+valgrind --leak-check=full --show-leak-kinds=all ./server
+# Run tests, then Ctrl+C to shutdown, check summary
+```
 
 ---
 
-### 🧩 Test 3 — LIST
+## Architecture Overview
 
-**Command:**
+### Three-Layer Thread Design
 
-```bash
-( printf "LIST\n" ) | nc localhost 12345
-```
+1. **Main/Accept Thread**
+   - Listens for TCP connections on port 10985
+   - Pushes accepted sockets to ClientQueue
 
-![List Files](images/list.jpg)
+2. **Client Thread Pool** (4 threads)
+   - Dequeues sockets from ClientQueue
+   - Handles user authentication (SIGNUP/LOGIN)
+   - Parses commands and validates quota
+   - Queues tasks to TaskQueue
+   - Waits for worker responses via condition variables (no busy-waiting)
+   - Sends responses to client sockets
 
----
+3. **Worker Thread Pool** (4 threads)
+   - Dequeues tasks from TaskQueue
+   - Acquires per-file locks
+   - Performs file I/O operations
+   - Updates metadata in SQLite database
+   - Delivers results to client threads via session-based CV signaling
 
-### 🧩 Test 4 — DOWNLOAD
+### Concurrency Control
 
-**Command:**
-
-```bash
-( printf "DOWNLOAD test.txt\n" ) | nc localhost 12345 > received.txt
-cat received.txt
-```
-
-**Expected Output:**
-
-```
-Hello World
-DOWNLOAD OK
-```
-
-![Download Test](images/download.jpg)
-
----
-
-### 🧩 Test 5 — DELETE
-
-**Command:**
-
-```bash
-( printf "DELETE test.txt\n" ) | nc localhost 12345
-```
-
-**Expected Output:**
-
-```
-DELETE OK
-```
-
-**Then verify the file is deleted:**
-
-```bash
-( printf "LIST\n" ) | nc localhost 12345
-```
-
-**Expected Output:**
-
-```
-LIST OK
-```
-
-![Delete Test](images/delete.jpg)
+- **Queue Synchronization:** Mutex + condition variables for ClientQueue and TaskQueue
+- **Session Management:** Hash table (256 max) with per-session response objects
+- **File Locking:** Per-file mutex manager (1024 max) with reference counting
+- **Database:** SQLite with FULLMUTEX mode and transaction-based atomic updates
+- **Worker→Client Delivery:** Session-based response with CV signaling (no busy-waiting)
 
 ---
 
-## 📝 Notes
+## Protocol
 
-- All user files are stored in `storage/<username>/` directories
-- The server uses multithreading to handle multiple concurrent client connections
-- File operations are queued and processed using a producer-consumer pattern
+Text-based protocol with binary data transfer:
+
+**Authentication:**
+```
+SIGNUP <username> <password>
+LOGIN <username> <password>
+```
+
+**File Operations:**
+```
+UPLOAD <filename> <size>
+<binary data (size bytes)>
+
+DOWNLOAD <filename>
+
+DELETE <filename>
+
+LIST
+```
+
+**Responses:**
+- Status messages (text)
+- Binary file data for DOWNLOAD
+
+See `docs/PROTOCOL.md` for detailed specification.
 
 ---
 
-## 🛠️ Technologies Used
+## Project Structure
 
-- **Language:** C
-- **Networking:** BSD Sockets
-- **Concurrency:** POSIX Threads (pthread)
-- **Build System:** Make
+```
+Dropbox-Clone/
+├── Makefile                   # Build configuration
+├── README.md                  # This file
+├── client/
+│   └── client.c               # Test client program
+├── src/
+│   ├── main.c                 # Entry point, accept loop
+│   ├── server.h               # Global declarations
+│   ├── threads/
+│   │   ├── client_thread.c    # Client thread handler
+│   │   └── worker_thread.c    # Worker thread handler
+│   ├── queue/
+│   │   ├── client_queue.c     # Socket queue
+│   │   └── task_queue.c       # Task queue
+│   ├── session/
+│   │   ├── session_manager.c  # Session tracking
+│   │   └── response_queue.c   # Worker→client responses
+│   ├── auth/
+│   │   ├── auth.c             # Authentication logic
+│   │   ├── user_metadata.c    # User metadata API
+│   │   └── database.c         # SQLite database layer
+│   ├── sync/
+│   │   └── file_locks.c       # Per-file lock manager
+│   └── utils/
+│       └── network_utils.c    # Socket I/O helpers
+├── storage/
+│   ├── dropbox.db             # SQLite database
+│   └── <username>/            # User file directories
+├── tests/
+│   ├── test_phase1.sh         # Phase 1 acceptance tests
+│   ├── test_phase2_concurrency.sh  # Phase 2 concurrency tests
+│   ├── demo_phase2.sh         # Functional demo
+│   ├── demo_tsan.sh           # TSAN demo
+│   └── demo_valgrind.sh       # Valgrind demo
+└── docs/
+    ├── phase1_report.md       # Phase 1 design report
+    ├── phase2_report.md       # Phase 2 design report
+    ├── PROTOCOL.md            # Protocol specification
+    └── TESTING_RESULTS.md     # Detailed test results
+```
 
 ---
 
-## 📄 License
+## Test Results
 
-This project is open source and available for educational purposes.
+### ThreadSanitizer (TSAN)
+- **Status:** ✅ PASS
+- **Data Races Detected:** 0
+- **Tests Performed:** 19 scenarios (Phase 1 + Phase 2)
+
+### Valgrind
+- **Status:** ✅ PASS
+- **Memory Leaks:** 0 bytes
+- **Allocations:** 4,420
+- **Frees:** 4,420 (perfect balance)
+
+### Functional Tests
+- **Phase 1:** 11/11 tests passing
+- **Phase 2:** 8/8 concurrency scenarios passing
+
+See `docs/TESTING_RESULTS.md` for complete verification details.
+
+---
+
+## Known Limitations
+
+- **Max Concurrent Sessions:** 256 (configurable via `MAX_SESSIONS` in `src/session/session_manager.h`)
+- **Max File Locks:** 1024 (configurable via `MAX_FILE_LOCKS` in `src/sync/file_locks.h`)
+- **Password Hashing:** SHA256 (acceptable for educational project; bcrypt recommended for production)
+- **No Encryption:** Plaintext protocol (TLS/SSL not implemented)
+- **Quota Enforcement:** Soft limit (checked before upload, but concurrent operations may briefly exceed)
+
+---
+
+## Design Reports
+
+- **Phase 1 Report:** `docs/phase1_report.md` - Thread architecture, queues, synchronization
+- **Phase 2 Report:** `docs/phase2_report.md` - Concurrency control, multi-session support, verification
