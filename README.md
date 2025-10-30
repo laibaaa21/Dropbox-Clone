@@ -4,9 +4,9 @@
 
 <h1 align="center">StashCLI - Multi-threaded File Storage Server</h1>
 
-<h2 align="center" style="color: #4fd8eb; font-style: italic; font-weight: normal;">
-StashCLI: Stash your "stuff" on our servers using our world-famous plaintext protocol! Zero privacy, zero security, but hey—passwords are SHAshed (not bashed). Quotas are honored if you upload slow enough, and yes, we sell your data to pay for hosting our one server (spoiler: it's localhost). Real hackers know where to look. Use at your own risk.
-</h2>
+<h3 align="center" style="color: #4fd8eb;"><em>
+Stash your "stuff" on our servers using our world-famous plaintext protocol! Zero privacy, zero security, but hey—passwords are SHAshed (not bashed). Quotas are honored if you upload slow enough, and yes, we sell your data to pay for hosting our one server (spoiler: it's localhost). Real hackers know where to look. Use at your own risk.
+</em></h3>
 
 ---
 
