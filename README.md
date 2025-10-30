@@ -8,12 +8,6 @@
 StashCLI: Stash your "stuff" on our servers using our world-famous plaintext protocol! Zero privacy, zero security, but hey—passwords are SHAshed (not bashed). Quotas are honored if you upload slow enough, and yes, we sell your data to pay for hosting our one server (spoiler: it's localhost). Real hackers know where to look. Use at your own risk.
 </h2>
 
-<p align="center">
-  A multi-threaded file storage server implementing user authentication, per-user quotas, and concurrent file operations using a three-layer thread architecture.
-</p>
-
-For detailed documentation and reports, see the `docs/` directory.
-
 ---
 
 ## Features
@@ -319,3 +313,5 @@ See `docs/TESTING_RESULTS.md` for complete verification details.
 
 - **Phase 1 Report:** `docs/phase1_report.md` - Thread architecture, queues, synchronization
 - **Phase 2 Report:** `docs/phase2_report.md` - Concurrency control, multi-session support, verification
+
+**Note:** *For detailed documentation and reports, see the `docs/` directory.*
