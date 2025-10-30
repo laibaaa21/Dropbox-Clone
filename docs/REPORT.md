@@ -14,7 +14,7 @@
 
 ### 1. GitHub Repository Link
 
-**Repository:** [https://github.com/laibaaa21/StashCLI](https://github.com/laibaaa21/StashCLI)
+**Repository:** [https://github.com/laibaaa21/Dropbox-Clone](https://github.com/laibaaa21/Dropbox-Clone)
 
 **Important Notes:**
 - Repository contains complete source code
