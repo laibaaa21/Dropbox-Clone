@@ -1,8 +1,12 @@
 <p align="center">
-  <img src="images/SplashScreenBanner.png" alt="StashCLI Banner" width="600">
+  <img src="images/Banner.png" alt="StashCLI Banner" width="600">
 </p>
 
 <h1 align="center">StashCLI - Multi-threaded File Storage Server</h1>
+
+<h2 align="center" style="color: #4fd8eb; font-style: italic; font-weight: normal;">
+StashCLI: Stash your "stuff" on our servers using our world-famous plaintext protocol! No privacy. No security. Passwords SHAshed (not bashed), quotas honored only if you upload slow, and yes, we sell your data just to pay hosting. Real hackers know where to look. Use at your own risk.
+</h2>
 
 <p align="center">
   A multi-threaded file storage server implementing user authentication, per-user quotas, and concurrent file operations using a three-layer thread architecture.
@@ -24,6 +28,10 @@ For detailed documentation and reports, see the `docs/` directory.
 ---
 
 ## User Interface
+
+<p align="center">
+  <img src="images/SplashScreenBanner.png" alt="App Splash Screen" width="600">
+</p>
 
 StashCLI features a modern terminal user interface (TUI) with color-coded output, progress bars, and an intuitive command structure.
 
